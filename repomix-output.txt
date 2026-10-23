@@ -1808,10 +1808,10 @@ return table.freeze(AudioController)
 --[[
 	LobbyApp.luau
 	Sleek glassmorphic sci-fi pre-spawn Lobby / Loadout overlay.
-	- Active when LocalPlayer:GetAttribute("InArena") ~= true
-	- Weapon selection: VORTEX_SMG or HELIOS_RAIL
+	- Active when LocalPlayer:GetAttribute("InArena") ~= true or toggled via M / B keybind
+	- Weapon selection: VORTEX_SMG or HELIOS_RAIL (dynamically synced with WeaponData.luau)
 	- "Competitive 240FPS Mode" toggle
-	- Live Top Server B-Hop Speed Records board
+	- Live Top Server B-Hop Speed Records board reading player:GetAttribute("TopBhopSpeed")
 	- "DEPLOY TO ARENA" button firing ReplicatedStorage:WaitForChild("RequestDeploy"):FireServer(selectedWeaponId)
 ]]
 
@@ -1824,6 +1824,22 @@ local LocalPlayer = Players.LocalPlayer
 local clientRoot = script.Parent.Parent
 
 local MovementController = require(clientRoot:WaitForChild("movement"):WaitForChild("MovementController")) :: any
+
+-- Shared WeaponData module lookup
+local WeaponData: { [string]: any } = {}
+do
+	local sharedFolder = ReplicatedStorage:FindFirstChild("Shared") or ReplicatedStorage:WaitForChild("Shared", 5)
+	if sharedFolder then
+		local configs = sharedFolder:FindFirstChild("configs")
+		local weaponDataModule = if configs then configs:FindFirstChild("WeaponData") else nil
+		if weaponDataModule and weaponDataModule:IsA("ModuleScript") then
+			local ok, mod = pcall(require, weaponDataModule)
+			if ok and type(mod) == "table" then
+				WeaponData = mod
+			end
+		end
+	end
+end
 
 -- Optional GraphicsController & WeaponController bridges
 local GraphicsController: any = nil
@@ -1866,7 +1882,10 @@ type WeaponOption = {
 	Id: string,
 	Title: string,
 	Class: string,
-	StatsText: string,
+	DefaultDmg: number,
+	DefaultHs: number,
+	DefaultRpm: number,
+	DefaultMag: number,
 	Description: string,
 }
 
@@ -1875,14 +1894,20 @@ local WEAPON_OPTIONS: { WeaponOption } = {
 		Id = "VORTEX_SMG",
 		Title = "VORTEX_SMG",
 		Class = "PLASMA SUBMACHINE GUN // CQC-VELOCITY",
-		StatsText = "DMG: 18 (32 HS)  |  ROF: 900 RPM  |  MAG: 36",
+		DefaultDmg = 18,
+		DefaultHs = 36,
+		DefaultRpm = 720,
+		DefaultMag = 30,
 		Description = "High-cadence plasma repeater engineered for aggressive mid-air tracking at 45+ studs/s.",
 	},
 	{
 		Id = "HELIOS_RAIL",
 		Title = "HELIOS_RAIL",
 		Class = "LINEAR ACCELERATOR RAILGUN // PRECISION",
-		StatsText = "DMG: 75 (150 HS) |  ROF: 75 RPM   |  MAG: 05",
+		DefaultDmg = 95,
+		DefaultHs = 237,
+		DefaultRpm = 51,
+		DefaultMag = 5,
 		Description = "Instantaneous hyper-velocity slug projector rewarding pinpoint flick accuracy while B-hopping.",
 	},
 }
@@ -1900,12 +1925,53 @@ local isInitialized = false
 local lobbyGui: ScreenGui? = nil
 local selectedWeaponId = "VORTEX_SMG"
 local competitive240Mode = false
+local manualOverlayOpen = false
 local localPeakSpeed = 0.0
 
-local weaponCardRefs: { [string]: { Card: Frame, Stroke: UIStroke, Badge: TextLabel } } = {}
+local weaponCardRefs: { [string]: { Card: Frame, Stroke: UIStroke, Badge: TextLabel, StatsLabel: TextLabel } } = {}
 local recordRowLabels: { TextLabel } = {}
 local toggleStrokeRef: UIStroke? = nil
 local toggleStateLabelRef: TextLabel? = nil
+
+local function buildWeaponStatsText(option: WeaponOption): string
+	local entry = WeaponData[option.Id] or (WeaponData.Weapons and WeaponData.Weapons[option.Id])
+	local dmg = option.DefaultDmg
+	local hs = option.DefaultHs
+	local rpm = option.DefaultRpm
+	local mag = option.DefaultMag
+
+	if type(entry) == "table" then
+		local rawDmg = entry.BaseDamage or entry.Damage
+		if type(rawDmg) == "number" then
+			dmg = math.floor(rawDmg)
+		end
+
+		if type(entry.HeadshotDamage) == "number" then
+			hs = math.floor(entry.HeadshotDamage)
+		elseif type(entry.HeadshotMultiplier) == "number" then
+			hs = math.floor(dmg * entry.HeadshotMultiplier)
+		end
+
+		if type(entry.FireRateRPM) == "number" then
+			rpm = math.round(entry.FireRateRPM)
+		elseif type(entry.RPM) == "number" then
+			rpm = math.round(entry.RPM)
+		elseif type(entry.FireInterval) == "number" and entry.FireInterval > 0 then
+			rpm = math.round(60 / entry.FireInterval)
+		elseif type(entry.FireCooldown) == "number" and entry.FireCooldown > 0 then
+			rpm = math.round(60 / entry.FireCooldown)
+		elseif type(entry.FireRate) == "number" and entry.FireRate > 0 then
+			rpm = if entry.FireRate > 25 then math.round(entry.FireRate) else math.round(60 / entry.FireRate)
+		end
+
+		local rawMag = entry.MagazineSize or entry.MaxAmmo or entry.AmmoCapacity
+		if type(rawMag) == "number" then
+			mag = math.floor(rawMag)
+		end
+	end
+
+	return string.format("DMG: %d (%d HS) | ROF: %d RPM | MAG: %02d", dmg, hs, rpm, mag)
+end
 
 local function styleGlassPanel(frame: GuiObject, strokeColor: Color3, strokeThickness: number?): UIStroke
 	frame.BackgroundColor3 = CARD_BG_COLOR
@@ -1927,13 +1993,17 @@ local function styleGlassPanel(frame: GuiObject, strokeColor: Color3, strokeThic
 end
 
 local function updateWeaponSelectionVisuals()
-	for id, refs in pairs(weaponCardRefs) do
-		local isSelected = (id == selectedWeaponId)
-		refs.Stroke.Color = if isSelected then COLOR_NEON_CYAN else COLOR_BORDER_IDLE
-		refs.Stroke.Thickness = if isSelected then 2 else 1
-		refs.Card.BackgroundTransparency = if isSelected then 0.2 else CARD_TRANSPARENCY
-		refs.Badge.Text = if isSelected then "SELECTED // ACTIVE" else "CLICK TO EQUIP"
-		refs.Badge.TextColor3 = if isSelected then COLOR_NEON_CYAN else COLOR_TEXT_SUB
+	for _, option in ipairs(WEAPON_OPTIONS) do
+		local refs = weaponCardRefs[option.Id]
+		if refs then
+			local isSelected = (option.Id == selectedWeaponId)
+			refs.Stroke.Color = if isSelected then COLOR_NEON_CYAN else COLOR_BORDER_IDLE
+			refs.Stroke.Thickness = if isSelected then 2 else 1
+			refs.Card.BackgroundTransparency = if isSelected then 0.2 else CARD_TRANSPARENCY
+			refs.Badge.Text = if isSelected then "SELECTED // ACTIVE" else "CLICK TO EQUIP"
+			refs.Badge.TextColor3 = if isSelected then COLOR_NEON_CYAN else COLOR_TEXT_SUB
+			refs.StatsLabel.Text = buildWeaponStatsText(option)
+		end
 	end
 
 	LocalPlayer:SetAttribute("SelectedWeapon", selectedWeaponId)
@@ -1978,7 +2048,8 @@ local function refreshSpeedRecords()
 	local seenNames: { [string]: boolean } = {}
 
 	for _, player in ipairs(Players:GetPlayers()) do
-		local attrSpeed = player:GetAttribute("PeakSpeed")
+		local attrSpeed = player:GetAttribute("TopBhopSpeed")
+			or player:GetAttribute("PeakSpeed")
 			or player:GetAttribute("TopSpeed")
 			or player:GetAttribute("BestBhopSpeed")
 			or player:GetAttribute("MaxSpeed")
@@ -2015,16 +2086,9 @@ local function refreshSpeedRecords()
 	end
 end
 
-local function handleDeployClicked()
-	local requestDeploy = ReplicatedStorage:WaitForChild("RequestDeploy", 5)
-	if requestDeploy and requestDeploy:IsA("RemoteEvent") then
-		requestDeploy:FireServer(selectedWeaponId)
-	end
-end
-
 local function syncLobbyState()
 	local inArena = LocalPlayer:GetAttribute("InArena") == true
-	local showLobby = not inArena
+	local showLobby = (not inArena) or manualOverlayOpen
 
 	if lobbyGui then
 		lobbyGui.Enabled = showLobby
@@ -2033,7 +2097,21 @@ local function syncLobbyState()
 	if showLobby then
 		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
 		UserInputService.MouseIconEnabled = true
+		updateWeaponSelectionVisuals()
 		refreshSpeedRecords()
+	else
+		UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+		UserInputService.MouseIconEnabled = false
+	end
+end
+
+local function handleDeployClicked()
+	manualOverlayOpen = false
+	syncLobbyState()
+
+	local requestDeploy = ReplicatedStorage:WaitForChild("RequestDeploy", 5)
+	if requestDeploy and requestDeploy:IsA("RemoteEvent") then
+		requestDeploy:FireServer(selectedWeaponId)
 	end
 end
 
@@ -2091,7 +2169,7 @@ function LobbyApp.Init()
 	subtitleLabel.Position = UDim2.fromOffset(24, 44)
 	subtitleLabel.Size = UDim2.new(1, -48, 0, 16)
 	subtitleLabel.Font = Enum.Font.Code
-	subtitleLabel.Text = "SELECT PRIMARY ARMAMENT, CONFIGURE 240HZ PIPELINE, AND DEPLOY TO ARENA"
+	subtitleLabel.Text = "SELECT PRIMARY ARMAMENT, CONFIGURE 240HZ PIPELINE, AND DEPLOY [KEYBIND: M / B]"
 	subtitleLabel.TextSize = 12
 	subtitleLabel.TextColor3 = COLOR_TEXT_SUB
 	subtitleLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -2159,7 +2237,7 @@ function LobbyApp.Init()
 		statsLabel.Position = UDim2.fromOffset(16, 54)
 		statsLabel.Size = UDim2.new(1, -32, 0, 18)
 		statsLabel.Font = Enum.Font.Code
-		statsLabel.Text = weapon.StatsText
+		statsLabel.Text = buildWeaponStatsText(weapon)
 		statsLabel.TextSize = 12
 		statsLabel.TextColor3 = COLOR_OVERDRIVE_ORANGE
 		statsLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -2194,6 +2272,7 @@ function LobbyApp.Init()
 			Card = card,
 			Stroke = stroke,
 			Badge = badge,
+			StatsLabel = statsLabel,
 		}
 	end
 
@@ -2309,12 +2388,30 @@ function LobbyApp.Init()
 
 	deployBtn.Activated:Connect(handleDeployClicked)
 
+	-- Keybind (M or B) to reopen/toggle Loadout overlay while in Arena
+	UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessed: boolean)
+		if gameProcessed then
+			return
+		end
+		if input.KeyCode == Enum.KeyCode.M or input.KeyCode == Enum.KeyCode.B then
+			if LocalPlayer:GetAttribute("InArena") == true then
+				manualOverlayOpen = not manualOverlayOpen
+				syncLobbyState()
+			end
+		end
+	end)
+
 	-- Initialize defaults & bind reactive listeners
 	updateWeaponSelectionVisuals()
 	applyCompetitiveMode(false)
 	refreshSpeedRecords()
 
-	LocalPlayer:GetAttributeChangedSignal("InArena"):Connect(syncLobbyState)
+	LocalPlayer:GetAttributeChangedSignal("InArena"):Connect(function()
+		if LocalPlayer:GetAttribute("InArena") == true then
+			manualOverlayOpen = false
+		end
+		syncLobbyState()
+	end)
 	syncLobbyState()
 
 	RunService.Heartbeat:Connect(function()
@@ -2641,26 +2738,6 @@ local CharacterAnims: CharacterAnimRegistry = table.freeze({
 })
 
 return CharacterAnims
-````
-
-## File: animations/registry/init.luau
-````
---!strict
-
-local ViewmodelAnims = require(script:WaitForChild("ViewmodelAnims"))
-local CharacterAnims = require(script:WaitForChild("CharacterAnims"))
-
-export type AnimEntry = ViewmodelAnims.AnimEntry
-export type WeaponAnimSet = ViewmodelAnims.WeaponAnimSet
-export type ViewmodelAnimRegistry = ViewmodelAnims.ViewmodelAnimRegistry
-export type CharacterAnimRegistry = CharacterAnims.CharacterAnimRegistry
-
-local AnimationRegistry = table.freeze({
-	ViewmodelAnims = ViewmodelAnims,
-	CharacterAnims = CharacterAnims,
-})
-
-return AnimationRegistry
 ````
 
 ## File: animations/registry/ViewmodelAnims.luau
@@ -3054,7 +3131,7 @@ local function resolveBeamTemplate(): Beam?
 		return nil
 	end
 
-	local vfxFolder = graphicsFolder:FindFirstChild("VFX")
+	local vfxFolder = graphicsFolder:FindFirstChild("VFXPrefabs") or graphicsFolder:FindFirstChild("VFX")
 	if not vfxFolder then
 		return nil
 	end
@@ -3196,10 +3273,14 @@ local WeaponData = require(Shared:WaitForChild("configs"):WaitForChild("WeaponDa
 local ShotPacket = require(Shared:WaitForChild("network"):WaitForChild("ShotPacket"))
 
 local TracerPool = require(script.Parent:WaitForChild("TracerPool"))
+local AudioController = require(script.Parent.Parent:WaitForChild("audio"):WaitForChild("AudioController"))
+local VFXController = require(script.Parent.Parent:WaitForChild("graphics"):WaitForChild("VFXController"))
+local CrosshairModule = require(script.Parent.Parent:WaitForChild("ui"):WaitForChild("CrosshairModule"))
 local ViewmodelController = require(script.Parent.Parent:WaitForChild("viewmodel"):WaitForChild("ViewmodelController"))
 
 local LOCAL_PLAYER = Players.LocalPlayer
 local DEFAULT_WEAPON_ID = "VORTEX_SMG"
+local OPTIMISTIC_HIT_DEDUP_WINDOW = 0.5
 
 type WeaponStats = {
 	Id: string?,
@@ -3213,6 +3294,10 @@ type WeaponStats = {
 	MaxRange: number?,
 	Range: number?,
 	RecoilKick: Vector3?,
+	RecoilKickPos: Vector3?,
+	RecoilKickRot: Vector3?,
+	FireSoundKey: string?,
+	ReloadSoundKey: string?,
 	IsOverdrive: boolean?,
 }
 
@@ -3227,6 +3312,10 @@ local FALLBACK_WEAPON_STATS: { [string]: WeaponStats } = {
 		Automatic = true,
 		MaxRange = 600,
 		RecoilKick = Vector3.new(0.04, 0.01, 0.18),
+		RecoilKickPos = Vector3.new(0, 0, 0.18),
+		RecoilKickRot = Vector3.new(0.04, 0.01, 0),
+		FireSoundKey = "PulseRifleFire",
+		ReloadSoundKey = "PulseRifleReload",
 		IsOverdrive = false,
 	},
 	HELIOS_RAIL = {
@@ -3239,6 +3328,10 @@ local FALLBACK_WEAPON_STATS: { [string]: WeaponStats } = {
 		Automatic = false,
 		MaxRange = 1200,
 		RecoilKick = Vector3.new(0.16, 0.03, 0.55),
+		RecoilKickPos = Vector3.new(0, 0.02, 0.55),
+		RecoilKickRot = Vector3.new(0.16, 0.03, 0),
+		FireSoundKey = "RailgunFire",
+		ReloadSoundKey = "PulseRifleReload",
 		IsOverdrive = true,
 	},
 }
@@ -3257,6 +3350,9 @@ local isTriggerHeld = false
 local lastFireTimestamp = 0
 local reloadStateToken = 0
 local fireWeaponRemote: Instance? = nil
+
+local pendingOptimisticHits = 0
+local lastOptimisticHitTime = 0
 
 local raycastParams = RaycastParams.new()
 raycastParams.FilterType = Enum.RaycastFilterType.Exclude
@@ -3319,13 +3415,6 @@ local function isWeaponAutomatic(weaponId: string, stats: WeaponStats): boolean
 	return weaponId == "VORTEX_SMG"
 end
 
-local function getNumericWeaponId(weaponId: string, stats: WeaponStats): number
-	if stats.WeaponId then
-		return stats.WeaponId
-	end
-	return if weaponId == "HELIOS_RAIL" then 2 else 1
-end
-
 local function fireWeaponListeners()
 	for i = 1, #WeaponController.OnWeaponFired do
 		local callback = WeaponController.OnWeaponFired[i]
@@ -3342,6 +3431,25 @@ local function fireHitListeners(isHeadshot: boolean)
 			callback(isHeadshot)
 		end
 	end
+end
+
+local function triggerHitmarkerFeedback(isHeadshot: boolean)
+	CrosshairModule.TriggerHitmarker(isHeadshot)
+	AudioController.PlayUISound(if isHeadshot then "HitmarkerHeadshot" else "HitmarkerBody")
+	fireHitListeners(isHeadshot)
+end
+
+local function handleServerHitConfirm(payload: any)
+	local isHeadshot = (typeof(payload) == "table" and payload.isHeadshot == true) or payload == true
+
+	local now = os.clock()
+	if pendingOptimisticHits > 0 and (now - lastOptimisticHitTime) <= OPTIMISTIC_HIT_DEDUP_WINDOW then
+		pendingOptimisticHits -= 1
+		return
+	end
+
+	pendingOptimisticHits = 0
+	triggerHitmarkerFeedback(isHeadshot)
 end
 
 local function evaluateHitResult(rayResult: RaycastResult?): (boolean, boolean)
@@ -3374,49 +3482,6 @@ local function evaluateHitResult(rayResult: RaycastResult?): (boolean, boolean)
 	return true, isHeadshot
 end
 
-local function encodeShotBuffer(
-	origin: Vector3,
-	direction: Vector3,
-	hitPosition: Vector3,
-	timestamp: number,
-	weaponId: string,
-	numericWeaponId: number
-): buffer
-	local encodeFn = (ShotPacket :: any).Encode
-	local arity = debug.info(encodeFn, "a")
-
-	if arity == 1 then
-		return encodeFn({
-			Origin = origin,
-			Direction = direction,
-			HitPosition = hitPosition,
-			Timestamp = timestamp,
-			ClientTimestamp = timestamp,
-			WeaponId = numericWeaponId,
-			WeaponName = weaponId,
-			origin = origin,
-			direction = direction,
-			hitPosition = hitPosition,
-			timestamp = timestamp,
-			clientTimestamp = timestamp,
-			weaponId = numericWeaponId,
-		})
-	end
-
-	local ok, encoded = pcall(encodeFn, origin, direction, timestamp, numericWeaponId)
-	if ok and type(encoded) == "buffer" then
-		return encoded
-	end
-
-	return encodeFn({
-		Origin = origin,
-		Direction = direction,
-		HitPosition = hitPosition,
-		Timestamp = timestamp,
-		WeaponId = numericWeaponId,
-	})
-end
-
 local function sendShotBuffer(packetBuffer: buffer)
 	local remote = fireWeaponRemote
 	if not remote then
@@ -3446,6 +3511,14 @@ local function startReload()
 	reloadStateToken += 1
 	local activeToken = reloadStateToken
 
+	local reloadRemote = ReplicatedStorage:FindFirstChild("ReloadWeaponEvent")
+	if reloadRemote and reloadRemote:IsA("RemoteEvent") then
+		reloadRemote:FireServer()
+	end
+
+	AudioController.PlayWeaponSound(stats.ReloadSoundKey or "PulseRifleReload")
+	ViewmodelController.PlayReloadAnimation(reloadDuration)
+
 	task.delay(reloadDuration, function()
 		if reloadStateToken ~= activeToken or not WeaponController.IsReloading then
 			return
@@ -3457,6 +3530,10 @@ local function startReload()
 end
 
 local function attemptFire()
+	if LOCAL_PLAYER and LOCAL_PLAYER:GetAttribute("InArena") ~= true then
+		return
+	end
+
 	if WeaponController.IsReloading then
 		return
 	end
@@ -3499,39 +3576,50 @@ local function attemptFire()
 	local rayResult = workspace:Raycast(rayOrigin, aimDirection * maxRange, raycastParams)
 	local endPos = if rayResult then rayResult.Position else (rayOrigin + aimDirection * maxRange)
 
+	AudioController.PlayWeaponSound(
+		stats.FireSoundKey or (if weaponId == "HELIOS_RAIL" then "RailgunFire" else "PulseRifleFire")
+	)
+
+	local muzzleAtt = ViewmodelController.GetMuzzleAttachment()
+	if muzzleAtt then
+		VFXController.EmitMuzzleFlash(muzzleAtt)
+	end
+
 	local muzzlePos = rayOrigin
 	if type((ViewmodelController :: any).GetMuzzleWorldPosition) == "function" then
 		local resolvedMuzzle = ViewmodelController.GetMuzzleWorldPosition()
 		if typeof(resolvedMuzzle) == "Vector3" then
 			muzzlePos = resolvedMuzzle
 		end
+	elseif muzzleAtt then
+		muzzlePos = muzzleAtt.WorldPosition
 	end
 
 	local isOverdrive = stats.IsOverdrive == true or weaponId == "HELIOS_RAIL"
 	TracerPool.SpawnTracer(muzzlePos, endPos, isOverdrive)
 
-	local recoilKick = stats.RecoilKick or Vector3.new(0.05, 0, 0.2)
-	if type((ViewmodelController :: any).ApplyRecoilImpulse) == "function" then
-		ViewmodelController.ApplyRecoilImpulse(recoilKick)
+	if rayResult then
+		VFXController.SpawnImpactSparks(rayResult.Position, rayResult.Normal)
 	end
 
+	local recoilKickPos = stats.RecoilKickPos or stats.RecoilKick or Vector3.new(0, 0, 0.2)
+	local recoilKickRot = stats.RecoilKickRot or Vector3.new(0.05, 0, 0)
+	ViewmodelController.ApplyRecoilImpulse(recoilKickPos, recoilKickRot)
+
 	local netTimestamp = workspace:GetServerTimeNow()
-	local numericWeaponId = getNumericWeaponId(weaponId, stats)
-	local packetBuffer = encodeShotBuffer(
-		rayOrigin,
-		aimDirection,
-		endPos,
-		netTimestamp,
-		weaponId,
-		numericWeaponId
-	)
+	local unitDir = aimDirection.Unit
+	local pitch = math.asin(math.clamp(unitDir.Y, -1, 1))
+	local yaw = math.atan2(-unitDir.X, -unitDir.Z)
+	local packetBuffer = ShotPacket.Encode(netTimestamp, rayOrigin, pitch, yaw)
 	sendShotBuffer(packetBuffer)
 
 	fireWeaponListeners()
 
 	local didHitTarget, isHeadshot = evaluateHitResult(rayResult)
 	if didHitTarget then
-		fireHitListeners(isHeadshot)
+		pendingOptimisticHits += 1
+		lastOptimisticHitTime = now
+		triggerHitmarkerFeedback(isHeadshot)
 	end
 
 	if WeaponController.CurrentAmmo <= 0 then
@@ -3542,7 +3630,10 @@ end
 function WeaponController.SwitchWeapon(weaponId: string)
 	if weaponId ~= "VORTEX_SMG" and weaponId ~= "HELIOS_RAIL" then
 		local dataTable = WeaponData :: any
-		if type(dataTable) ~= "table" or (not dataTable[weaponId] and not (dataTable.Weapons and dataTable.Weapons[weaponId])) then
+		if
+			type(dataTable) ~= "table"
+			or (not dataTable[weaponId] and not (dataTable.Weapons and dataTable.Weapons[weaponId]))
+		then
 			return
 		end
 	end
@@ -3576,14 +3667,40 @@ function WeaponController.Init()
 	TracerPool.Init()
 	fireWeaponRemote = ReplicatedStorage:WaitForChild("FireWeaponBuffer")
 
-	local hitConfirmRemote = ReplicatedStorage:FindFirstChild("HitConfirmed")
+	local hitConfirmRemote = ReplicatedStorage:FindFirstChild("HitConfirmEvent")
+		or ReplicatedStorage:FindFirstChild("HitConfirmed")
+		or ReplicatedStorage:WaitForChild("HitConfirmEvent")
+
 	if hitConfirmRemote and hitConfirmRemote:IsA("RemoteEvent") then
-		hitConfirmRemote.OnClientEvent:Connect(function(isHeadshot: boolean)
-			fireHitListeners(isHeadshot == true)
-		end)
+		hitConfirmRemote.OnClientEvent:Connect(handleServerHitConfirm)
 	end
 
-	WeaponController.SwitchWeapon(DEFAULT_WEAPON_ID)
+	local fallbackHitRemote = ReplicatedStorage:FindFirstChild("HitConfirmed")
+	if fallbackHitRemote and fallbackHitRemote ~= hitConfirmRemote and fallbackHitRemote:IsA("RemoteEvent") then
+		fallbackHitRemote.OnClientEvent:Connect(handleServerHitConfirm)
+	end
+
+	local initialWeapon = if LOCAL_PLAYER then LOCAL_PLAYER:GetAttribute("SelectedWeapon") else nil
+	if type(initialWeapon) == "string" and initialWeapon ~= "" then
+		WeaponController.SwitchWeapon(initialWeapon)
+	else
+		WeaponController.SwitchWeapon(DEFAULT_WEAPON_ID)
+	end
+
+	if LOCAL_PLAYER then
+		LOCAL_PLAYER:GetAttributeChangedSignal("SelectedWeapon"):Connect(function()
+			local selected = LOCAL_PLAYER:GetAttribute("SelectedWeapon")
+			if type(selected) == "string" and selected ~= "" then
+				WeaponController.SwitchWeapon(selected)
+			end
+		end)
+
+		LOCAL_PLAYER:GetAttributeChangedSignal("InArena"):Connect(function()
+			if LOCAL_PLAYER:GetAttribute("InArena") ~= true then
+				isTriggerHeld = false
+			end
+		end)
+	end
 
 	UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessedEvent: boolean)
 		if gameProcessedEvent then
@@ -4122,6 +4239,1883 @@ end
 return table.freeze(VFXController)
 ````
 
+## File: src/client/ui/CrosshairModule.luau
+````
+--!strict
+--[[
+	CrosshairModule.luau
+	Minimalist 4-bracket + center dot velocity-reactive sci-fi reticle.
+	Dynamically expands with MovementController.CurrentPlanarSpeed, tightens during
+	ViewmodelController.IsADS(), and flashes Neon Cyan (body) or Neon Orange/Red (headshot).
+]]
+
+local RunService = game:GetService("RunService")
+
+local clientRoot = script.Parent.Parent
+local MovementController = require(clientRoot:WaitForChild("movement"):WaitForChild("MovementController")) :: any
+local ViewmodelController = require(clientRoot:WaitForChild("viewmodel"):WaitForChild("ViewmodelController")) :: any
+
+local CrosshairModule = {}
+
+-- Visual & Telemetry Constants
+local BASE_GAP_PX = 8
+local ADS_GAP_MULTIPLIER = 0.42
+local SPEED_TO_GAP_FACTOR = 0.35
+local MAX_SPEED_GAP_ADDITION = 28
+local GAP_LERP_SPEED = 18
+
+local BRACKET_LENGTH = 8
+local BRACKET_THICKNESS = 2
+local HIT_FLASH_DURATION = 0.18
+
+local COLOR_DEFAULT = Color3.fromRGB(225, 248, 255)
+local COLOR_ADS = Color3.fromRGB(0, 240, 255)
+local COLOR_HIT_BODY = Color3.fromRGB(0, 240, 255) -- #00F0FF Neon Cyan
+local COLOR_HIT_HEAD = Color3.fromRGB(255, 78, 0) -- #FF4E00 Neon Orange/Red
+local COLOR_STROKE = Color3.fromRGB(10, 14, 20)
+
+-- Internal State
+local isInitialized = false
+local rootFrame: Frame? = nil
+local centerDot: Frame? = nil
+local topBracket: Frame? = nil
+local bottomBracket: Frame? = nil
+local leftBracket: Frame? = nil
+local rightBracket: Frame? = nil
+local hitTicks: { Frame } = {}
+
+local currentGap = BASE_GAP_PX
+local hitFlashRemaining = 0
+local lastHitHeadshot = false
+local renderConnection: RBXScriptConnection? = nil
+
+local function createBracket(name: string, parent: GuiObject, size: UDim2): Frame
+	local bracket = Instance.new("Frame")
+	bracket.Name = name
+	bracket.AnchorPoint = Vector2.new(0.5, 0.5)
+	bracket.Position = UDim2.fromScale(0.5, 0.5)
+	bracket.Size = size
+	bracket.BackgroundColor3 = COLOR_DEFAULT
+	bracket.BorderSizePixel = 0
+	bracket.Parent = parent
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = COLOR_STROKE
+	stroke.Thickness = 1
+	stroke.Transparency = 0.35
+	stroke.Parent = bracket
+
+	return bracket
+end
+
+local function createHitTick(index: number, rotationDeg: number, parent: GuiObject): Frame
+	local holder = Instance.new("Frame")
+	holder.Name = string.format("HitTick_%d", index)
+	holder.AnchorPoint = Vector2.new(0.5, 0.5)
+	holder.Position = UDim2.fromScale(0.5, 0.5)
+	holder.Size = UDim2.fromOffset(2, 7)
+	holder.Rotation = rotationDeg
+	holder.BackgroundColor3 = COLOR_HIT_BODY
+	holder.BackgroundTransparency = 1
+	holder.BorderSizePixel = 0
+	holder.Parent = parent
+
+	return holder
+end
+
+local function readPlanarSpeed(): number
+	if type(MovementController) == "table" then
+		if type(MovementController.CurrentPlanarSpeed) == "number" then
+			return MovementController.CurrentPlanarSpeed
+		elseif type(MovementController.GetPlanarSpeed) == "function" then
+			local ok, val = pcall(MovementController.GetPlanarSpeed)
+			if ok and type(val) == "number" then
+				return val
+			end
+		end
+	end
+	return 0
+end
+
+local function readIsADS(): boolean
+	if type(ViewmodelController) == "table" then
+		if type(ViewmodelController.IsADS) == "function" then
+			local ok, result = pcall(ViewmodelController.IsADS)
+			if ok and type(result) == "boolean" then
+				return result
+			end
+		elseif type(ViewmodelController.IsADS) == "boolean" then
+			return ViewmodelController.IsADS
+		end
+	end
+	return false
+end
+
+local function updateReticle(dt: number)
+	local root = rootFrame
+	local dot = centerDot
+	local topB = topBracket
+	local bottomB = bottomBracket
+	local leftB = leftBracket
+	local rightB = rightBracket
+
+	if not (root and dot and topB and bottomB and leftB and rightB) then
+		return
+	end
+
+	local speed = readPlanarSpeed()
+	local isAds = readIsADS()
+
+	local speedSpread = math.clamp(speed * SPEED_TO_GAP_FACTOR, 0, MAX_SPEED_GAP_ADDITION)
+	local targetGap = BASE_GAP_PX + speedSpread
+	if isAds then
+		targetGap = math.max(3, targetGap * ADS_GAP_MULTIPLIER)
+	end
+
+	local alpha = math.clamp(dt * GAP_LERP_SPEED, 0, 1)
+	currentGap = currentGap + (targetGap - currentGap) * alpha
+
+	local activeColor = if isAds then COLOR_ADS else COLOR_DEFAULT
+	local hitExpand = 0
+
+	if hitFlashRemaining > 0 then
+		hitFlashRemaining = math.max(0, hitFlashRemaining - dt)
+		local flashRatio = hitFlashRemaining / HIT_FLASH_DURATION
+		local flashColor = if lastHitHeadshot then COLOR_HIT_HEAD else COLOR_HIT_BODY
+		activeColor = activeColor:Lerp(flashColor, flashRatio)
+		hitExpand = flashRatio * (if lastHitHeadshot then 5 else 3)
+
+		local tickDist = 10 + flashRatio * 4
+		for i, tick in ipairs(hitTicks) do
+			local angleRad = math.rad((i - 1) * 90 + 45)
+			local ox = math.cos(angleRad) * tickDist
+			local oy = math.sin(angleRad) * tickDist
+			tick.Position = UDim2.new(0.5, math.round(ox), 0.5, math.round(oy))
+			tick.BackgroundColor3 = flashColor
+			tick.BackgroundTransparency = 1 - flashRatio
+		end
+	else
+		for _, tick in ipairs(hitTicks) do
+			tick.BackgroundTransparency = 1
+		end
+	end
+
+	local finalGap = math.round(currentGap + hitExpand)
+
+	dot.BackgroundColor3 = activeColor
+	topB.BackgroundColor3 = activeColor
+	bottomB.BackgroundColor3 = activeColor
+	leftB.BackgroundColor3 = activeColor
+	rightB.BackgroundColor3 = activeColor
+
+	topB.Position = UDim2.new(0.5, 0, 0.5, -(finalGap + BRACKET_LENGTH * 0.5))
+	bottomB.Position = UDim2.new(0.5, 0, 0.5, finalGap + BRACKET_LENGTH * 0.5)
+	leftB.Position = UDim2.new(0.5, -(finalGap + BRACKET_LENGTH * 0.5), 0.5, 0)
+	rightB.Position = UDim2.new(0.5, finalGap + BRACKET_LENGTH * 0.5, 0.5, 0)
+end
+
+function CrosshairModule.Init(parentGui: ScreenGui)
+	if isInitialized then
+		if rootFrame and parentGui then
+			rootFrame.Parent = parentGui
+		end
+		return
+	end
+	isInitialized = true
+
+	local container = Instance.new("Frame")
+	container.Name = "CrosshairContainer"
+	container.AnchorPoint = Vector2.new(0.5, 0.5)
+	container.Position = UDim2.fromScale(0.5, 0.5)
+	container.Size = UDim2.fromOffset(120, 120)
+	container.BackgroundTransparency = 1
+	container.Parent = parentGui
+	rootFrame = container
+
+	-- Center Dot (2x2 px)
+	local dot = Instance.new("Frame")
+	dot.Name = "CenterDot"
+	dot.AnchorPoint = Vector2.new(0.5, 0.5)
+	dot.Position = UDim2.fromScale(0.5, 0.5)
+	dot.Size = UDim2.fromOffset(2, 2)
+	dot.BackgroundColor3 = COLOR_DEFAULT
+	dot.BorderSizePixel = 0
+	dot.Parent = container
+
+	local dotStroke = Instance.new("UIStroke")
+	dotStroke.Color = COLOR_STROKE
+	dotStroke.Thickness = 1
+	dotStroke.Transparency = 0.35
+	dotStroke.Parent = dot
+	centerDot = dot
+
+	-- 4 Minimalist Sci-Fi Brackets
+	topBracket = createBracket("TopBracket", container, UDim2.fromOffset(BRACKET_THICKNESS, BRACKET_LENGTH))
+	bottomBracket = createBracket("BottomBracket", container, UDim2.fromOffset(BRACKET_THICKNESS, BRACKET_LENGTH))
+	leftBracket = createBracket("LeftBracket", container, UDim2.fromOffset(BRACKET_LENGTH, BRACKET_THICKNESS))
+	rightBracket = createBracket("RightBracket", container, UDim2.fromOffset(BRACKET_LENGTH, BRACKET_THICKNESS))
+
+	-- 4 Diagonal Hitmarker Ticks
+	table.clear(hitTicks)
+	for i = 1, 4 do
+		local rot = (i - 1) * 90 + 45
+		table.insert(hitTicks, createHitTick(i, rot, container))
+	end
+
+	if renderConnection then
+		renderConnection:Disconnect()
+	end
+	renderConnection = RunService.RenderStepped:Connect(updateReticle)
+end
+
+function CrosshairModule.TriggerHitmarker(isHeadshot: boolean)
+	lastHitHeadshot = isHeadshot == true
+	hitFlashRemaining = HIT_FLASH_DURATION
+	currentGap = currentGap + (if lastHitHeadshot then 4 else 2)
+end
+
+return CrosshairModule
+````
+
+## File: src/client/ui/HudApp.luau
+````
+--!strict
+--[[
+	HudApp.luau
+	Minimalist glassmorphic sci-fi in-game HUD:
+	- Bottom-center Speedometer (00.0 STUDS/S in Enum.Font.Code, shifts #00F0FF -> #FF6E00 above 45 studs/s)
+	- Bottom-right Minimalist Ammo & Weapon Card reading live state from WeaponController
+	- Bottom-left Health Bar tracking LocalPlayer.Character.Humanoid.Health
+	- Top-right KILLS / DEATHS / PEAK SPEED mini-telemetry badge
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+local clientRoot = script.Parent.Parent
+
+local MovementController = require(clientRoot:WaitForChild("movement"):WaitForChild("MovementController")) :: any
+local WeaponController = require(clientRoot:WaitForChild("combat"):WaitForChild("WeaponController")) :: any
+local CrosshairModule = require(script.Parent:WaitForChild("CrosshairModule"))
+local LobbyApp = require(script.Parent:WaitForChild("LobbyApp"))
+
+-- Shared WeaponData lookup
+local WeaponData: { [string]: any } = {}
+do
+	local sharedFolder = ReplicatedStorage:FindFirstChild("Shared") or ReplicatedStorage:WaitForChild("Shared", 5)
+	if sharedFolder then
+		local configs = sharedFolder:FindFirstChild("configs")
+		local weaponDataModule = if configs then configs:FindFirstChild("WeaponData") else nil
+		if weaponDataModule and weaponDataModule:IsA("ModuleScript") then
+			local ok, data = pcall(require, weaponDataModule)
+			if ok and type(data) == "table" then
+				WeaponData = data
+			end
+		end
+	end
+end
+
+local HudApp = {}
+
+-- Glassmorphic Visual Constants
+local CARD_BG_COLOR = Color3.fromRGB(10, 14, 20)
+local CARD_BG_TRANSPARENCY = 0.35
+local COLOR_NEON_CYAN = Color3.fromRGB(0, 240, 255) -- #00F0FF
+local COLOR_OVERDRIVE_ORANGE = Color3.fromRGB(255, 110, 0) -- #FF6E00
+local COLOR_CRITICAL_RED = Color3.fromRGB(255, 55, 65)
+local COLOR_TEXT_PRIMARY = Color3.fromRGB(235, 248, 255)
+local COLOR_TEXT_MUTED = Color3.fromRGB(130, 155, 175)
+
+local OVERDRIVE_SPEED_THRESHOLD = 45.0
+local MAX_SPEED_BAR_REFERENCE = 80.0
+
+local DEFAULT_WEAPON_META: { [string]: { DisplayName: string, MagazineSize: number } } = {
+	VORTEX_SMG = { DisplayName = "VORTEX SMG", MagazineSize = 30 },
+	HELIOS_RAIL = { DisplayName = "HELIOS RAIL", MagazineSize = 5 },
+}
+
+-- Internal UI References
+local isInitialized = false
+local hudGui: ScreenGui? = nil
+
+-- Speedometer Refs
+local speedTextLabel: TextLabel? = nil
+local speedStateLabel: TextLabel? = nil
+local speedFillBar: Frame? = nil
+local speedStroke: UIStroke? = nil
+
+-- Health Refs
+local healthValueLabel: TextLabel? = nil
+local healthFillBar: Frame? = nil
+local healthStroke: UIStroke? = nil
+
+-- Ammo & Weapon Refs
+local weaponNameLabel: TextLabel? = nil
+local ammoCurrentLabel: TextLabel? = nil
+local ammoMaxLabel: TextLabel? = nil
+local ammoFillBar: Frame? = nil
+local ammoStroke: UIStroke? = nil
+
+-- Top-Right Telemetry Badge Refs
+local killsValueLabel: TextLabel? = nil
+local deathsValueLabel: TextLabel? = nil
+local peakSpeedValueLabel: TextLabel? = nil
+local telemetryStroke: UIStroke? = nil
+
+local humanoidConnections: { RBXScriptConnection } = {}
+
+local function createGlassCard(
+	name: string,
+	parent: Instance,
+	size: UDim2,
+	position: UDim2,
+	anchorPoint: Vector2
+): (Frame, UIStroke)
+	local card = Instance.new("Frame")
+	card.Name = name
+	card.Size = size
+	card.Position = position
+	card.AnchorPoint = anchorPoint
+	card.BackgroundColor3 = CARD_BG_COLOR
+	card.BackgroundTransparency = CARD_BG_TRANSPARENCY
+	card.BorderSizePixel = 0
+	card.Parent = parent
+
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 6)
+	corner.Parent = card
+
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = COLOR_NEON_CYAN
+	stroke.Thickness = 1
+	stroke.Transparency = 0.25
+	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	stroke.Parent = card
+
+	return card, stroke
+end
+
+local function readPlanarSpeed(): number
+	if type(MovementController) == "table" then
+		if type(MovementController.CurrentPlanarSpeed) == "number" then
+			return MovementController.CurrentPlanarSpeed
+		elseif type(MovementController.GetPlanarSpeed) == "function" then
+			local ok, speed = pcall(MovementController.GetPlanarSpeed)
+			if ok and type(speed) == "number" then
+				return speed
+			end
+		end
+	end
+	return 0
+end
+
+local function readWeaponTelemetry(): (string, number, number, boolean)
+	local weaponId = "VORTEX_SMG"
+	local currentAmmo: number? = nil
+	local maxAmmo: number? = nil
+	local isReloading = false
+
+	if type(WeaponController) == "table" then
+		local rawId = WeaponController.CurrentWeaponId
+			or WeaponController.EquippedWeaponId
+			or WeaponController.CurrentWeapon
+			or WeaponController.WeaponId
+		if type(rawId) == "string" and #rawId > 0 then
+			weaponId = rawId
+		elseif type(WeaponController.GetEquippedWeapon) == "function" then
+			local ok, res = pcall(WeaponController.GetEquippedWeapon)
+			if ok and type(res) == "string" and #res > 0 then
+				weaponId = res
+			end
+		end
+
+		if type(WeaponController.CurrentAmmo) == "number" then
+			currentAmmo = WeaponController.CurrentAmmo
+		elseif type(WeaponController.Ammo) == "number" then
+			currentAmmo = WeaponController.Ammo
+		elseif type(WeaponController.GetAmmo) == "function" then
+			local ok, cur, max = pcall(WeaponController.GetAmmo)
+			if ok and type(cur) == "number" then
+				currentAmmo = cur
+				if type(max) == "number" then
+					maxAmmo = max
+				end
+			end
+		end
+
+		if type(WeaponController.MaxAmmo) == "number" then
+			maxAmmo = WeaponController.MaxAmmo
+		elseif type(WeaponController.MagazineSize) == "number" then
+			maxAmmo = WeaponController.MagazineSize
+		end
+
+		if type(WeaponController.IsReloading) == "boolean" then
+			isReloading = WeaponController.IsReloading
+		elseif type(WeaponController.IsReloading) == "function" then
+			local ok, rel = pcall(WeaponController.IsReloading)
+			if ok and type(rel) == "boolean" then
+				isReloading = rel
+			end
+		end
+	end
+
+	local attrWeapon = LocalPlayer:GetAttribute("EquippedWeapon") or LocalPlayer:GetAttribute("SelectedWeapon")
+	if type(attrWeapon) == "string" and #attrWeapon > 0 and weaponId == "VORTEX_SMG" then
+		weaponId = attrWeapon
+	end
+
+	local configEntry = WeaponData[weaponId] or (WeaponData.Weapons and WeaponData.Weapons[weaponId])
+	local fallbackMeta = DEFAULT_WEAPON_META[weaponId] or { DisplayName = weaponId, MagazineSize = 30 }
+
+	local resolvedMax = maxAmmo
+		or (
+			if type(configEntry) == "table"
+				then (configEntry.MagazineSize or configEntry.MaxAmmo or configEntry.AmmoCapacity)
+				else nil
+		)
+		or fallbackMeta.MagazineSize
+
+	local resolvedCurrent = currentAmmo or resolvedMax
+	local displayName = (
+		if type(configEntry) == "table" and type(configEntry.DisplayName or configEntry.Name) == "string"
+			then (configEntry.DisplayName or configEntry.Name)
+			else fallbackMeta.DisplayName
+	)
+
+	return string.upper(displayName),
+		math.max(0, math.floor(resolvedCurrent)),
+		math.max(1, math.floor(resolvedMax)),
+		isReloading
+end
+
+local function updateHealthDisplay(health: number, maxHealth: number)
+	local safeMax = if maxHealth > 0 then maxHealth else 100
+	local clampedHealth = math.clamp(health, 0, safeMax)
+	local ratio = clampedHealth / safeMax
+	local isLow = ratio <= 0.35
+	local accentColor = if isLow then COLOR_CRITICAL_RED else COLOR_NEON_CYAN
+
+	if healthValueLabel then
+		healthValueLabel.Text = string.format("%03d", math.ceil(clampedHealth))
+		healthValueLabel.TextColor3 = if isLow then COLOR_CRITICAL_RED else COLOR_TEXT_PRIMARY
+	end
+	if healthFillBar then
+		healthFillBar.Size = UDim2.fromScale(ratio, 1)
+		healthFillBar.BackgroundColor3 = accentColor
+	end
+	if healthStroke then
+		healthStroke.Color = accentColor
+	end
+end
+
+local function updateTopRightTelemetryBadge()
+	local rawKills = LocalPlayer:GetAttribute("Kills")
+	local rawDeaths = LocalPlayer:GetAttribute("Deaths")
+	local rawTopSpeed = LocalPlayer:GetAttribute("TopBhopSpeed")
+
+	local kills = if type(rawKills) == "number" then math.max(0, math.floor(rawKills)) else 0
+	local deaths = if type(rawDeaths) == "number" then math.max(0, math.floor(rawDeaths)) else 0
+	local topSpeed = if type(rawTopSpeed) == "number" then math.max(0, rawTopSpeed) else 0.0
+
+	local planarSpeed = readPlanarSpeed()
+	if planarSpeed > topSpeed then
+		topSpeed = planarSpeed
+	end
+
+	local isOverdrivePeak = topSpeed > OVERDRIVE_SPEED_THRESHOLD
+
+	if killsValueLabel then
+		killsValueLabel.Text = string.format("%02d", kills)
+	end
+	if deathsValueLabel then
+		deathsValueLabel.Text = string.format("%02d", deaths)
+	end
+	if peakSpeedValueLabel then
+		peakSpeedValueLabel.Text = string.format("%04.1f", topSpeed)
+		peakSpeedValueLabel.TextColor3 = if isOverdrivePeak then COLOR_OVERDRIVE_ORANGE else COLOR_NEON_CYAN
+	end
+	if telemetryStroke then
+		telemetryStroke.Color = if isOverdrivePeak then COLOR_OVERDRIVE_ORANGE else COLOR_NEON_CYAN
+	end
+end
+
+local function bindCharacter(character: Model?)
+	for _, conn in ipairs(humanoidConnections) do
+		conn:Disconnect()
+	end
+	table.clear(humanoidConnections)
+
+	if not character then
+		updateHealthDisplay(100, 100)
+		return
+	end
+
+	local humanoid = character:FindFirstChildOfClass("Humanoid") or character:WaitForChild("Humanoid", 5) :: Humanoid?
+	if humanoid and humanoid:IsA("Humanoid") then
+		updateHealthDisplay(humanoid.Health, humanoid.MaxHealth)
+		table.insert(
+			humanoidConnections,
+			humanoid.HealthChanged:Connect(function(newHealth: number)
+				updateHealthDisplay(newHealth, humanoid.MaxHealth)
+			end)
+		)
+	end
+end
+
+local function updateHudTelemetry()
+	-- 1. Speedometer Update
+	local speed = readPlanarSpeed()
+	local isOverdrive = speed > OVERDRIVE_SPEED_THRESHOLD
+	local speedAccent = if isOverdrive then COLOR_OVERDRIVE_ORANGE else COLOR_NEON_CYAN
+
+	if speedTextLabel then
+		speedTextLabel.Text = string.format("%04.1f STUDS/S", speed)
+		speedTextLabel.TextColor3 = speedAccent
+	end
+	if speedStateLabel then
+		speedStateLabel.Text = if isOverdrive then "OVERDRIVE // BHOP VELOCITY" else "TELEMETRY // PLANAR VELOCITY"
+		speedStateLabel.TextColor3 = if isOverdrive then COLOR_OVERDRIVE_ORANGE else COLOR_TEXT_MUTED
+	end
+	if speedFillBar then
+		local fillRatio = math.clamp(speed / MAX_SPEED_BAR_REFERENCE, 0, 1)
+		speedFillBar.Size = UDim2.fromScale(fillRatio, 1)
+		speedFillBar.BackgroundColor3 = speedAccent
+	end
+	if speedStroke then
+		speedStroke.Color = speedAccent
+	end
+
+	-- 2. Ammo & Weapon Update
+	local weaponName, curAmmo, maxAmmo, isReloading = readWeaponTelemetry()
+	local ammoRatio = math.clamp(curAmmo / math.max(1, maxAmmo), 0, 1)
+	local isLowAmmo = (ammoRatio <= 0.25) or isReloading
+	local ammoAccent = if isReloading
+		then COLOR_OVERDRIVE_ORANGE
+		elseif isLowAmmo then COLOR_CRITICAL_RED
+		else COLOR_NEON_CYAN
+
+	if weaponNameLabel then
+		weaponNameLabel.Text = if isReloading then weaponName .. " // RELOADING" else weaponName
+		weaponNameLabel.TextColor3 = if isReloading then COLOR_OVERDRIVE_ORANGE else COLOR_NEON_CYAN
+	end
+	if ammoCurrentLabel then
+		ammoCurrentLabel.Text = string.format("%02d", curAmmo)
+		ammoCurrentLabel.TextColor3 = if isLowAmmo then ammoAccent else COLOR_TEXT_PRIMARY
+	end
+	if ammoMaxLabel then
+		ammoMaxLabel.Text = string.format("/ %02d", maxAmmo)
+	end
+	if ammoFillBar then
+		ammoFillBar.Size = UDim2.fromScale(ammoRatio, 1)
+		ammoFillBar.BackgroundColor3 = ammoAccent
+	end
+	if ammoStroke then
+		ammoStroke.Color = ammoAccent
+	end
+
+	-- 3. Top-Right Kills / Deaths / Peak Speed Telemetry
+	updateTopRightTelemetryBadge()
+
+	-- 4. Live Character Health Sync
+	local character = LocalPlayer.Character
+	if character then
+		local humanoid = character:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			updateHealthDisplay(humanoid.Health, humanoid.MaxHealth)
+		end
+	end
+end
+
+function HudApp.SetVisible(visible: boolean)
+	if hudGui then
+		hudGui.Enabled = visible
+	end
+end
+
+function HudApp.Init()
+	if isInitialized then
+		return
+	end
+	isInitialized = true
+
+	local playerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+	local screenGui = Instance.new("ScreenGui")
+	screenGui.Name = "SciFiHudGui"
+	screenGui.IgnoreGuiInset = true
+	screenGui.ResetOnSpawn = false
+	screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+	screenGui.DisplayOrder = 5
+	screenGui.Parent = playerGui
+	hudGui = screenGui
+
+	-- Initialize Crosshair inside HUD ScreenGui
+	CrosshairModule.Init(screenGui)
+
+	-- Register CrosshairModule.TriggerHitmarker into WeaponController.OnHitConfirmed
+	if type(WeaponController) == "table" then
+		local existingHook = WeaponController.OnHitConfirmed
+		if existingHook == nil then
+			WeaponController.OnHitConfirmed = CrosshairModule.TriggerHitmarker
+		elseif typeof(existingHook) == "Instance" and existingHook:IsA("BindableEvent") then
+			existingHook.Event:Connect(CrosshairModule.TriggerHitmarker)
+		elseif type(existingHook) == "table" and type(existingHook.Connect) == "function" then
+			existingHook:Connect(CrosshairModule.TriggerHitmarker)
+		end
+	end
+
+	-- =========================================================================
+	-- 1. TOP-RIGHT MINI-TELEMETRY BADGE (KILLS / DEATHS / PEAK SPEED)
+	-- =========================================================================
+	local telemetryCard, tStroke = createGlassCard(
+		"TelemetryBadgeCard",
+		screenGui,
+		UDim2.fromOffset(276, 54),
+		UDim2.new(1, -32, 0, 24),
+		Vector2.new(1, 0)
+	)
+	telemetryStroke = tStroke
+
+	local killsHeader = Instance.new("TextLabel")
+	killsHeader.Name = "KillsHeader"
+	killsHeader.BackgroundTransparency = 1
+	killsHeader.Position = UDim2.fromOffset(14, 7)
+	killsHeader.Size = UDim2.fromOffset(64, 13)
+	killsHeader.Font = Enum.Font.Code
+	killsHeader.Text = "KILLS"
+	killsHeader.TextSize = 11
+	killsHeader.TextColor3 = COLOR_TEXT_MUTED
+	killsHeader.TextXAlignment = Enum.TextXAlignment.Left
+	killsHeader.Parent = telemetryCard
+
+	local killsVal = Instance.new("TextLabel")
+	killsVal.Name = "KillsValue"
+	killsVal.BackgroundTransparency = 1
+	killsVal.Position = UDim2.fromOffset(14, 22)
+	killsVal.Size = UDim2.fromOffset(64, 24)
+	killsVal.Font = Enum.Font.Code
+	killsVal.Text = "00"
+	killsVal.TextSize = 20
+	killsVal.TextColor3 = COLOR_TEXT_PRIMARY
+	killsVal.TextXAlignment = Enum.TextXAlignment.Left
+	killsVal.Parent = telemetryCard
+	killsValueLabel = killsVal
+
+	local deathsHeader = Instance.new("TextLabel")
+	deathsHeader.Name = "DeathsHeader"
+	deathsHeader.BackgroundTransparency = 1
+	deathsHeader.Position = UDim2.fromOffset(92, 7)
+	deathsHeader.Size = UDim2.fromOffset(64, 13)
+	deathsHeader.Font = Enum.Font.Code
+	deathsHeader.Text = "DEATHS"
+	deathsHeader.TextSize = 11
+	deathsHeader.TextColor3 = COLOR_TEXT_MUTED
+	deathsHeader.TextXAlignment = Enum.TextXAlignment.Left
+	deathsHeader.Parent = telemetryCard
+
+	local deathsVal = Instance.new("TextLabel")
+	deathsVal.Name = "DeathsValue"
+	deathsVal.BackgroundTransparency = 1
+	deathsVal.Position = UDim2.fromOffset(92, 22)
+	deathsVal.Size = UDim2.fromOffset(64, 24)
+	deathsVal.Font = Enum.Font.Code
+	deathsVal.Text = "00"
+	deathsVal.TextSize = 20
+	deathsVal.TextColor3 = COLOR_TEXT_PRIMARY
+	deathsVal.TextXAlignment = Enum.TextXAlignment.Left
+	deathsVal.Parent = telemetryCard
+	deathsValueLabel = deathsVal
+
+	local peakHeader = Instance.new("TextLabel")
+	peakHeader.Name = "PeakHeader"
+	peakHeader.BackgroundTransparency = 1
+	peakHeader.Position = UDim2.new(1, -110, 0, 7)
+	peakHeader.Size = UDim2.fromOffset(96, 13)
+	peakHeader.Font = Enum.Font.Code
+	peakHeader.Text = "PEAK STUDS/S"
+	peakHeader.TextSize = 11
+	peakHeader.TextColor3 = COLOR_TEXT_MUTED
+	peakHeader.TextXAlignment = Enum.TextXAlignment.Right
+	peakHeader.Parent = telemetryCard
+
+	local peakVal = Instance.new("TextLabel")
+	peakVal.Name = "PeakSpeedValue"
+	peakVal.BackgroundTransparency = 1
+	peakVal.Position = UDim2.new(1, -110, 0, 22)
+	peakVal.Size = UDim2.fromOffset(96, 24)
+	peakVal.Font = Enum.Font.Code
+	peakVal.Text = "00.0"
+	peakVal.TextSize = 20
+	peakVal.TextColor3 = COLOR_NEON_CYAN
+	peakVal.TextXAlignment = Enum.TextXAlignment.Right
+	peakVal.Parent = telemetryCard
+	peakSpeedValueLabel = peakVal
+
+	-- =========================================================================
+	-- 2. BOTTOM-CENTER GLASSMORPHIC SPEEDOMETER
+	-- =========================================================================
+	local speedCard, sStroke = createGlassCard(
+		"SpeedometerCard",
+		screenGui,
+		UDim2.fromOffset(250, 66),
+		UDim2.new(0.5, 0, 1, -28),
+		Vector2.new(0.5, 1)
+	)
+	speedStroke = sStroke
+
+	local sState = Instance.new("TextLabel")
+	sState.Name = "StateLabel"
+	sState.BackgroundTransparency = 1
+	sState.Position = UDim2.fromOffset(12, 6)
+	sState.Size = UDim2.new(1, -24, 0, 14)
+	sState.Font = Enum.Font.Code
+	sState.Text = "TELEMETRY // PLANAR VELOCITY"
+	sState.TextSize = 11
+	sState.TextColor3 = COLOR_TEXT_MUTED
+	sState.TextXAlignment = Enum.TextXAlignment.Center
+	sState.Parent = speedCard
+	speedStateLabel = sState
+
+	local sValue = Instance.new("TextLabel")
+	sValue.Name = "SpeedValue"
+	sValue.BackgroundTransparency = 1
+	sValue.Position = UDim2.fromOffset(12, 20)
+	sValue.Size = UDim2.new(1, -24, 0, 28)
+	sValue.Font = Enum.Font.Code
+	sValue.Text = "00.0 STUDS/S"
+	sValue.TextSize = 22
+	sValue.TextColor3 = COLOR_NEON_CYAN
+	sValue.TextXAlignment = Enum.TextXAlignment.Center
+	sValue.Parent = speedCard
+	speedTextLabel = sValue
+
+	local sBarBg = Instance.new("Frame")
+	sBarBg.Name = "VelocityBarBg"
+	sBarBg.Position = UDim2.new(0, 12, 1, -10)
+	sBarBg.Size = UDim2.new(1, -24, 0, 4)
+	sBarBg.BackgroundColor3 = Color3.fromRGB(25, 34, 48)
+	sBarBg.BorderSizePixel = 0
+	sBarBg.Parent = speedCard
+
+	local sBarFill = Instance.new("Frame")
+	sBarFill.Name = "Fill"
+	sBarFill.Size = UDim2.fromScale(0, 1)
+	sBarFill.BackgroundColor3 = COLOR_NEON_CYAN
+	sBarFill.BorderSizePixel = 0
+	sBarFill.Parent = sBarBg
+	speedFillBar = sBarFill
+
+	-- =========================================================================
+	-- 3. BOTTOM-LEFT HEALTH BAR CARD
+	-- =========================================================================
+	local healthCard, hStroke = createGlassCard(
+		"HealthCard",
+		screenGui,
+		UDim2.fromOffset(230, 68),
+		UDim2.new(0, 32, 1, -28),
+		Vector2.new(0, 1)
+	)
+	healthStroke = hStroke
+
+	local hTitle = Instance.new("TextLabel")
+	hTitle.Name = "Header"
+	hTitle.BackgroundTransparency = 1
+	hTitle.Position = UDim2.fromOffset(14, 8)
+	hTitle.Size = UDim2.fromOffset(110, 14)
+	hTitle.Font = Enum.Font.Code
+	hTitle.Text = "VITALS // INTEGRITY"
+	hTitle.TextSize = 11
+	hTitle.TextColor3 = COLOR_TEXT_MUTED
+	hTitle.TextXAlignment = Enum.TextXAlignment.Left
+	hTitle.Parent = healthCard
+
+	local hVal = Instance.new("TextLabel")
+	hVal.Name = "HealthValue"
+	hVal.BackgroundTransparency = 1
+	hVal.Position = UDim2.fromOffset(14, 22)
+	hVal.Size = UDim2.fromOffset(90, 26)
+	hVal.Font = Enum.Font.Code
+	hVal.Text = "100"
+	hVal.TextSize = 24
+	hVal.TextColor3 = COLOR_TEXT_PRIMARY
+	hVal.TextXAlignment = Enum.TextXAlignment.Left
+	hVal.Parent = healthCard
+	healthValueLabel = hVal
+
+	local hUnit = Instance.new("TextLabel")
+	hUnit.Name = "UnitLabel"
+	hUnit.BackgroundTransparency = 1
+	hUnit.Position = UDim2.new(1, -64, 0, 28)
+	hUnit.Size = UDim2.fromOffset(50, 18)
+	hUnit.Font = Enum.Font.Code
+	hUnit.Text = "HP"
+	hUnit.TextSize = 14
+	hUnit.TextColor3 = COLOR_NEON_CYAN
+	hUnit.TextXAlignment = Enum.TextXAlignment.Right
+	hUnit.Parent = healthCard
+
+	local hBarBg = Instance.new("Frame")
+	hBarBg.Name = "HealthBarBg"
+	hBarBg.Position = UDim2.new(0, 14, 1, -12)
+	hBarBg.Size = UDim2.new(1, -28, 0, 5)
+	hBarBg.BackgroundColor3 = Color3.fromRGB(25, 34, 48)
+	hBarBg.BorderSizePixel = 0
+	hBarBg.Parent = healthCard
+
+	local hBarFill = Instance.new("Frame")
+	hBarFill.Name = "Fill"
+	hBarFill.Size = UDim2.fromScale(1, 1)
+	hBarFill.BackgroundColor3 = COLOR_NEON_CYAN
+	hBarFill.BorderSizePixel = 0
+	hBarFill.Parent = hBarBg
+	healthFillBar = hBarFill
+
+	-- =========================================================================
+	-- 4. BOTTOM-RIGHT MINIMALIST AMMO & WEAPON CARD
+	-- =========================================================================
+	local ammoCard, aStroke = createGlassCard(
+		"AmmoWeaponCard",
+		screenGui,
+		UDim2.fromOffset(230, 68),
+		UDim2.new(1, -32, 1, -28),
+		Vector2.new(1, 1)
+	)
+	ammoStroke = aStroke
+
+	local wLabel = Instance.new("TextLabel")
+	wLabel.Name = "WeaponName"
+	wLabel.BackgroundTransparency = 1
+	wLabel.Position = UDim2.fromOffset(14, 8)
+	wLabel.Size = UDim2.new(1, -28, 0, 14)
+	wLabel.Font = Enum.Font.Code
+	wLabel.Text = "VORTEX SMG"
+	wLabel.TextSize = 12
+	wLabel.TextColor3 = COLOR_NEON_CYAN
+	wLabel.TextXAlignment = Enum.TextXAlignment.Right
+	wLabel.Parent = ammoCard
+	weaponNameLabel = wLabel
+
+	local aCur = Instance.new("TextLabel")
+	aCur.Name = "CurrentAmmo"
+	aCur.BackgroundTransparency = 1
+	aCur.Position = UDim2.new(1, -135, 0, 22)
+	aCur.Size = UDim2.fromOffset(65, 26)
+	aCur.Font = Enum.Font.Code
+	aCur.Text = "30"
+	aCur.TextSize = 24
+	aCur.TextColor3 = COLOR_TEXT_PRIMARY
+	aCur.TextXAlignment = Enum.TextXAlignment.Right
+	aCur.Parent = ammoCard
+	ammoCurrentLabel = aCur
+
+	local aMax = Instance.new("TextLabel")
+	aMax.Name = "MaxAmmo"
+	aMax.BackgroundTransparency = 1
+	aMax.Position = UDim2.new(1, -66, 0, 27)
+	aMax.Size = UDim2.fromOffset(52, 20)
+	aMax.Font = Enum.Font.Code
+	aMax.Text = "/ 30"
+	aMax.TextSize = 15
+	aMax.TextColor3 = COLOR_TEXT_MUTED
+	aMax.TextXAlignment = Enum.TextXAlignment.Left
+	aMax.Parent = ammoCard
+	ammoMaxLabel = aMax
+
+	local aBarBg = Instance.new("Frame")
+	aBarBg.Name = "AmmoBarBg"
+	aBarBg.Position = UDim2.new(0, 14, 1, -12)
+	aBarBg.Size = UDim2.new(1, -28, 0, 5)
+	aBarBg.BackgroundColor3 = Color3.fromRGB(25, 34, 48)
+	aBarBg.BorderSizePixel = 0
+	aBarBg.Parent = ammoCard
+
+	local aBarFill = Instance.new("Frame")
+	aBarFill.Name = "Fill"
+	aBarFill.Size = UDim2.fromScale(1, 1)
+	aBarFill.BackgroundColor3 = COLOR_NEON_CYAN
+	aBarFill.BorderSizePixel = 0
+	aBarFill.Parent = aBarBg
+	ammoFillBar = aBarFill
+
+	-- Character & Attribute Telemetry Connections
+	if LocalPlayer.Character then
+		bindCharacter(LocalPlayer.Character)
+	end
+	LocalPlayer.CharacterAdded:Connect(bindCharacter)
+
+	LocalPlayer:GetAttributeChangedSignal("Kills"):Connect(updateTopRightTelemetryBadge)
+	LocalPlayer:GetAttributeChangedSignal("Deaths"):Connect(updateTopRightTelemetryBadge)
+	LocalPlayer:GetAttributeChangedSignal("TopBhopSpeed"):Connect(updateTopRightTelemetryBadge)
+	updateTopRightTelemetryBadge()
+
+	RunService.RenderStepped:Connect(updateHudTelemetry)
+
+	-- Sync visibility with Arena attribute & ensure LobbyApp is initialized
+	local function syncArenaVisibility()
+		local inArena = LocalPlayer:GetAttribute("InArena") == true
+		HudApp.SetVisible(inArena)
+	end
+	LocalPlayer:GetAttributeChangedSignal("InArena"):Connect(syncArenaVisibility)
+	syncArenaVisibility()
+
+	LobbyApp.Init()
+end
+
+return HudApp
+````
+
+## File: src/client/init.client.luau
+````
+--!strict
+
+local function requireClientModule(moduleName: string, directPath: Instance?): any
+	if directPath and directPath:IsA("ModuleScript") then
+		return require(directPath)
+	end
+
+	local found = script:FindFirstChild(moduleName, true)
+	if found and found:IsA("ModuleScript") then
+		return require(found)
+	end
+
+	error(`[ClientBootstrap] Missing required client module: {moduleName}`)
+end
+
+local TracerPool = requireClientModule("TracerPool", script.combat:FindFirstChild("TracerPool"))
+local SlideController = requireClientModule("SlideController", script.movement:FindFirstChild("SlideController"))
+local MovementController = requireClientModule(
+	"MovementController",
+	script.movement:FindFirstChild("MovementController")
+)
+local ViewmodelController = requireClientModule(
+	"ViewmodelController",
+	script.viewmodel:FindFirstChild("ViewmodelController")
+)
+local WeaponController = requireClientModule("WeaponController", script.combat:FindFirstChild("WeaponController"))
+local GraphicsController = requireClientModule(
+	"GraphicsController",
+	script.graphics:FindFirstChild("GraphicsController")
+)
+local VFXController = requireClientModule("VFXController", script.graphics:FindFirstChild("VFXController"))
+local AudioController = requireClientModule("AudioController", script.audio:FindFirstChild("AudioController"))
+local HudApp = requireClientModule("HudApp", script.ui:FindFirstChild("HudApp"))
+local LobbyApp = requireClientModule("LobbyApp", script.ui:FindFirstChild("LobbyApp"))
+
+TracerPool.Init()
+SlideController.Init()
+MovementController.Init()
+ViewmodelController.Init()
+WeaponController.Init()
+GraphicsController.Init()
+VFXController.Init()
+AudioController.Init()
+HudApp.Init()
+LobbyApp.Init()
+````
+
+## File: src/server/combat/CombatValidator.luau
+````
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+
+local HitboxHistory = require(script.Parent.HitboxHistory)
+local ShotPacket = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("network"):WaitForChild("ShotPacket"))
+local WeaponData = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("configs"):WaitForChild("WeaponData"))
+
+local successLoadout, LoadoutService = pcall(function()
+	return require(script.Parent.LoadoutService)
+end)
+
+local CombatValidator = {}
+
+local fireEvent: RemoteEvent
+local hitConfirmEvent: RemoteEvent
+local reloadEvent: RemoteEvent
+
+type WeaponState = {
+	ammo: number,
+	lastShotTime: number,
+	reloadEndTime: number,
+}
+
+type PlayerCombatState = {
+	weapons: { [string]: WeaponState },
+}
+
+local playerStates: { [Player]: PlayerCombatState } = {}
+
+function CombatValidator.Init()
+	fireEvent = ReplicatedStorage:FindFirstChild("FireWeaponBuffer") :: RemoteEvent
+	if not fireEvent then
+		fireEvent = Instance.new("RemoteEvent")
+		fireEvent.Name = "FireWeaponBuffer"
+		fireEvent.Parent = ReplicatedStorage
+	end
+
+	hitConfirmEvent = ReplicatedStorage:FindFirstChild("HitConfirmEvent") :: RemoteEvent
+	if not hitConfirmEvent then
+		hitConfirmEvent = Instance.new("RemoteEvent")
+		hitConfirmEvent.Name = "HitConfirmEvent"
+		hitConfirmEvent.Parent = ReplicatedStorage
+	end
+
+	reloadEvent = ReplicatedStorage:FindFirstChild("ReloadWeaponEvent") :: RemoteEvent
+	if not reloadEvent then
+		reloadEvent = Instance.new("RemoteEvent")
+		reloadEvent.Name = "ReloadWeaponEvent"
+		reloadEvent.Parent = ReplicatedStorage
+	end
+
+	local function initPlayerWeapons(player: Player)
+		local weaponsState = {}
+		for weaponName, data in pairs(WeaponData) do
+			if type(data) == "table" and (data.MagazineSize or data.magazineSize) then
+				weaponsState[weaponName] = {
+					ammo = data.MagazineSize or data.magazineSize or 30,
+					lastShotTime = 0,
+					reloadEndTime = 0,
+				}
+			end
+		end
+		playerStates[player] = {
+			weapons = weaponsState,
+		}
+	end
+
+	Players.PlayerAdded:Connect(function(player)
+		initPlayerWeapons(player)
+		player.CharacterAdded:Connect(function(char)
+			local pState = playerStates[player]
+			if pState then
+				for weaponName, wState in pairs(pState.weapons) do
+					local wConfig = WeaponData[weaponName]
+					if wConfig and type(wConfig) == "table" then
+						wState.ammo = wConfig.MagazineSize or wConfig.magazineSize or 30
+					else
+						wState.ammo = 30
+					end
+					wState.reloadEndTime = 0
+				end
+			else
+				initPlayerWeapons(player)
+			end
+		end)
+	end)
+
+	Players.PlayerRemoving:Connect(function(player)
+		playerStates[player] = nil
+	end)
+
+	reloadEvent.OnServerEvent:Connect(function(shooter: Player)
+		local pState = playerStates[shooter]
+		if not pState then
+			return
+		end
+
+		local weaponName = "VORTEX_SMG"
+		if successLoadout and LoadoutService and type(LoadoutService.getCurrentWeapon) == "function" then
+			local current = LoadoutService.getCurrentWeapon(shooter)
+			if current then
+				weaponName = current
+			end
+		end
+		if not weaponName or weaponName == "" then
+			weaponName = shooter:GetAttribute("SelectedWeapon") or "VORTEX_SMG"
+		end
+
+		local weaponConfig = nil
+		if type(WeaponData.GetWeapon) == "function" then
+			weaponConfig = WeaponData.GetWeapon(weaponName)
+		end
+		if not weaponConfig then
+			weaponConfig = WeaponData[weaponName]
+		end
+		if not weaponConfig then
+			return
+		end
+
+		local wState = pState.weapons[weaponName]
+		if not wState then
+			wState = { ammo = weaponConfig.MagazineSize or 30, lastShotTime = 0, reloadEndTime = 0 }
+			pState.weapons[weaponName] = wState
+		end
+
+		wState.reloadEndTime = Workspace:GetServerTimeNow() + (weaponConfig.ReloadTime or 1.5)
+		wState.ammo = weaponConfig.MagazineSize or weaponConfig.magazineSize or 30
+	end)
+
+	fireEvent.OnServerEvent:Connect(function(shooter: Player, payload: any)
+		if not payload or typeof(payload) ~= "buffer" then
+			return
+		end
+
+		local success, isValid, timestamp, origin, direction = pcall(function()
+			return ShotPacket.Decode(payload)
+		end)
+
+		if not success or not isValid or not timestamp or not origin or not direction then
+			return
+		end
+
+		local char = shooter.Character
+		if not char then
+			return
+		end
+		local head = char:FindFirstChild("Head")
+		if not head or not head:IsA("BasePart") then
+			return
+		end
+
+		if (origin - head.Position).Magnitude > 14 then
+			return
+		end
+
+		local weaponName = "VORTEX_SMG"
+		if successLoadout and LoadoutService and type(LoadoutService.getCurrentWeapon) == "function" then
+			local current = LoadoutService.getCurrentWeapon(shooter)
+			if current then
+				weaponName = current
+			end
+		end
+		if not weaponName or weaponName == "" then
+			weaponName = shooter:GetAttribute("SelectedWeapon") or "VORTEX_SMG"
+		end
+
+		local weaponConfig = nil
+		if type(WeaponData.GetWeapon) == "function" then
+			weaponConfig = WeaponData.GetWeapon(weaponName)
+		end
+		if not weaponConfig then
+			weaponConfig = WeaponData[weaponName]
+		end
+		if not weaponConfig then
+			return
+		end
+
+		local pState = playerStates[shooter]
+		if not pState then
+			return
+		end
+		local wState = pState.weapons[weaponName]
+		if not wState then
+			wState = { ammo = weaponConfig.MagazineSize or 30, lastShotTime = 0, reloadEndTime = 0 }
+			pState.weapons[weaponName] = wState
+		end
+
+		local now = Workspace:GetServerTimeNow()
+
+		if now < wState.reloadEndTime then
+			return
+		end
+
+		local rpm = weaponConfig.FireRateRPM or weaponConfig.RPM or 600
+		local minInterval = 60 / rpm
+		if (now - wState.lastShotTime) < (minInterval * 0.8) then
+			return
+		end
+
+		if wState.ammo <= 0 then
+			return
+		end
+
+		wState.ammo -= 1
+		wState.lastShotTime = now
+
+		local restoreFn = HitboxHistory.RewindToTimestamp(shooter, timestamp)
+
+		local range = weaponConfig.MaxRange or weaponConfig.Range or 1000
+
+		local raycastParams = RaycastParams.new()
+		raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+		raycastParams.FilterDescendantsInstances = { char }
+		raycastParams.IgnoreWater = true
+
+		local rayResult = Workspace:Raycast(origin, direction.Unit * range, raycastParams)
+
+		restoreFn()
+
+		if rayResult and rayResult.Instance then
+			local hitPart = rayResult.Instance
+			local hitModel = hitPart:FindFirstAncestorOfClass("Model")
+			if hitModel then
+				local humanoid = hitModel:FindFirstChildOfClass("Humanoid")
+				if humanoid and humanoid.Health > 0 then
+					local baseDamage = weaponConfig.BaseDamage or weaponConfig.Damage or 22
+					local damage = baseDamage
+					if hitPart.Name == "Head" then
+						damage *= (weaponConfig.HeadshotMultiplier or 2.0)
+					end
+
+					local healthBefore = humanoid.Health
+					humanoid:TakeDamage(damage)
+					if healthBefore > 0 and humanoid.Health <= 0 then
+						local currentKills = (shooter:GetAttribute("Kills") :: number?) or 0
+						shooter:SetAttribute("Kills", currentKills + 1)
+					end
+
+					hitConfirmEvent:FireClient(shooter, {
+						hitPosition = rayResult.Position,
+						hitPart = hitPart,
+						isHeadshot = (hitPart.Name == "Head"),
+						damage = damage,
+					})
+				end
+			end
+		end
+	end)
+end
+
+return CombatValidator
+````
+
+## File: src/server/combat/HitboxHistory.luau
+````
+--!strict
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+
+local HitboxHistory = {}
+
+type PartState = {
+	cf: CFrame,
+	anchored: boolean,
+	canQuery: boolean,
+}
+
+type Snapshot = {
+	time: number,
+	parts: { [BasePart]: PartState },
+}
+
+local playerHistories: { [Player]: { Snapshot } } = {}
+local MAX_HISTORY_DURATION = 1.0 -- 1 second
+local MAX_REWIND = 0.45 -- 450ms max rewind
+
+function HitboxHistory.Init()
+	RunService.Heartbeat:Connect(function(dt)
+		local now = Workspace:GetServerTimeNow()
+
+		for _, player in ipairs(Players:GetPlayers()) do
+			local character = player.Character
+			if character and character.Parent then
+				local humanoid = character:FindFirstChildOfClass("Humanoid")
+				if humanoid and humanoid.Health > 0 then
+					if not playerHistories[player] then
+						playerHistories[player] = {}
+					end
+
+					local partsMap: { [BasePart]: PartState } = {}
+					for _, desc in ipairs(character:GetDescendants()) do
+						if desc:IsA("BasePart") then
+							partsMap[desc] = {
+								cf = desc.CFrame,
+								anchored = desc.Anchored,
+								canQuery = desc.CanQuery,
+							}
+						end
+					end
+
+					local history = playerHistories[player]
+					table.insert(history, {
+						time = now,
+						parts = partsMap,
+					})
+
+					-- Prune snapshots older than 1.0 second
+					while #history > 0 and (now - history[1].time) > MAX_HISTORY_DURATION do
+						table.remove(history, 1)
+					end
+				else
+					playerHistories[player] = nil
+				end
+			else
+				playerHistories[player] = nil
+			end
+		end
+	end)
+
+	Players.PlayerRemoving:Connect(function(player)
+		playerHistories[player] = nil
+	end)
+end
+
+function HitboxHistory.RewindToTimestamp(shooter: Player, targetTimestamp: number): () -> ()
+	local now = Workspace:GetServerTimeNow()
+	local minAllowedTime = now - MAX_REWIND
+	targetTimestamp = math.clamp(targetTimestamp, minAllowedTime, now)
+
+	local originalStates: { [BasePart]: PartState } = {}
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= shooter then
+			local character = player.Character
+			if character and character.Parent then
+				local humanoid = character:FindFirstChildOfClass("Humanoid")
+				if humanoid and humanoid.Health > 0 then
+					local history = playerHistories[player]
+					if history and #history > 0 then
+						local s1, s2
+						for i = 1, #history - 1 do
+							if history[i].time <= targetTimestamp and history[i + 1].time >= targetTimestamp then
+								s1 = history[i]
+								s2 = history[i + 1]
+								break
+							end
+						end
+
+						local targetPartsState: { [BasePart]: PartState }? = nil
+						if s1 and s2 then
+							local alpha = 0
+							if s2.time > s1.time then
+								alpha = (targetTimestamp - s1.time) / (s2.time - s1.time)
+							end
+							targetPartsState = {}
+							for part, data1 in pairs(s1.parts) do
+								local data2 = s2.parts[part]
+								if data2 and part.Parent then
+									originalStates[part] = {
+										cf = part.CFrame,
+										anchored = part.Anchored,
+										canQuery = part.CanQuery,
+									}
+									targetPartsState[part] = {
+										cf = data1.cf:Lerp(data2.cf, alpha),
+										anchored = true,
+										canQuery = true,
+									}
+								end
+							end
+						else
+							-- Fallback to nearest snapshot
+							local nearest = history[1]
+							local minDiff = math.abs(nearest.time - targetTimestamp)
+							for i = 2, #history do
+								local diff = math.abs(history[i].time - targetTimestamp)
+								if diff < minDiff then
+									minDiff = diff
+									nearest = history[i]
+								end
+							end
+							if nearest then
+								targetPartsState = {}
+								for part, data in pairs(nearest.parts) do
+									if part.Parent then
+										targetPartsState[part] = {
+											cf = data.cf,
+											anchored = true,
+											canQuery = true,
+										}
+									end
+								end
+							end
+						end
+
+						if targetPartsState then
+							for part, state in pairs(targetPartsState) do
+								if part.Parent then
+									if not originalStates[part] then
+										originalStates[part] = {
+											cf = part.CFrame,
+											anchored = part.Anchored,
+											canQuery = part.CanQuery,
+										}
+									end
+									part.CFrame = state.cf
+									part.Anchored = state.anchored
+									part.CanQuery = state.canQuery
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+
+	local restored = false
+	local function restoreFn()
+		if restored then
+			return
+		end
+		restored = true
+		for part, state in pairs(originalStates) do
+			if part.Parent then
+				part.CFrame = state.cf
+				part.Anchored = state.anchored
+				part.CanQuery = state.canQuery
+			end
+		end
+	end
+
+	return restoreFn
+end
+
+return HitboxHistory
+````
+
+## File: src/server/replication/StanceReplicator.luau
+````
+--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+
+local StanceReplicator = {}
+
+local stanceSyncEvent: UnreliableRemoteEvent
+local lastSyncTimes: { [Player]: number } = {}
+local RATE_LIMIT_INTERVAL = 1 / 30 -- 30Hz rate limit
+
+function StanceReplicator.Init()
+	stanceSyncEvent = ReplicatedStorage:FindFirstChild("StanceSyncBuffer") :: UnreliableRemoteEvent
+	if not stanceSyncEvent then
+		stanceSyncEvent = Instance.new("UnreliableRemoteEvent")
+		stanceSyncEvent.Name = "StanceSyncBuffer"
+		stanceSyncEvent.Parent = ReplicatedStorage
+	end
+
+	stanceSyncEvent.OnServerEvent:Connect(function(sender: Player, packetBuffer: buffer)
+		if typeof(packetBuffer) ~= "buffer" then
+			return
+		end
+
+		if buffer.len(packetBuffer) < 5 then
+			return
+		end
+
+		local now = Workspace:GetServerTimeNow()
+		local lastTime = lastSyncTimes[sender] or 0
+		if (now - lastTime) < RATE_LIMIT_INTERVAL then
+			return
+		end
+
+		local success, pitch, isSliding = pcall(function()
+			local p = buffer.readf32(packetBuffer, 0)
+			local s = buffer.readu8(packetBuffer, 4)
+			return p, s
+		end)
+
+		if not success or pitch == nil or isSliding == nil then
+			return
+		end
+
+		-- Validate pitch is finite and within bounds
+		if pitch ~= pitch or math.abs(pitch) == math.huge then
+			return
+		end
+		if math.abs(pitch) > math.pi * 0.55 then
+			return
+		end
+
+		lastSyncTimes[sender] = now
+
+		-- Broadcast stance buffer to all other clients
+		for _, player in ipairs(Players:GetPlayers()) do
+			if player ~= sender then
+				stanceSyncEvent:FireClient(player, sender, packetBuffer)
+			end
+		end
+	end)
+
+	Players.PlayerRemoving:Connect(function(player)
+		lastSyncTimes[player] = nil
+	end)
+end
+
+return StanceReplicator
+````
+
+## File: src/server/init.server.luau
+````
+--!strict
+
+local function requireServerModule(moduleName: string, directPath: Instance?): any
+	if directPath and directPath:IsA("ModuleScript") then
+		return require(directPath)
+	end
+
+	local found = script:FindFirstChild(moduleName, true)
+	if found and found:IsA("ModuleScript") then
+		return require(found)
+	end
+
+	error(`[ServerBootstrap] Missing required server module: {moduleName}`)
+end
+
+local ArenaGenerator = requireServerModule("ArenaGenerator")
+local HitboxHistory = requireServerModule(
+	"HitboxHistory",
+	if script:FindFirstChild("combat") then script.combat:FindFirstChild("HitboxHistory") else nil
+)
+local CombatValidator = requireServerModule(
+	"CombatValidator",
+	if script:FindFirstChild("combat") then script.combat:FindFirstChild("CombatValidator") else nil
+)
+local StanceReplicator = requireServerModule(
+	"StanceReplicator",
+	if script:FindFirstChild("replication") then script.replication:FindFirstChild("StanceReplicator") else nil
+)
+local MatchService = requireServerModule(
+	"MatchService",
+	if script:FindFirstChild("match") then script.match:FindFirstChild("MatchService") else nil
+)
+
+ArenaGenerator.Init()
+HitboxHistory.Init()
+CombatValidator.Init()
+StanceReplicator.Init()
+MatchService.Init()
+````
+
+## File: src/shared/math/QuakeMath.luau
+````
+--!strict
+--[[
+	QuakeMath.luau
+	Pure vector math library implementing Quake III / Source Engine air-strafe
+	dot-product velocity projection, ground friction decay, and planar speed clamping.
+]]
+
+local STOP_SPEED_DEFAULT = 10
+
+local QuakeMath = {}
+
+--[[
+	Projects currentVel onto wishDir and adds acceleration up to wishSpeed.
+	Because projection uses the dot product (currentVel:Dot(wishDir)), strafing
+	nearly perpendicular to currentVel yields a small currentSpeed projection,
+	allowing total planar speed to exceed wishSpeed during air-strafing.
+]]
+function QuakeMath.Accelerate(
+	currentVel: Vector3,
+	wishDir: Vector3,
+	wishSpeed: number,
+	accel: number,
+	dt: number
+): Vector3
+	local planarWish = Vector3.new(wishDir.X, 0, wishDir.Z)
+	if planarWish.Magnitude <= 1e-6 or wishSpeed <= 0 or dt <= 0 then
+		return currentVel
+	end
+	local unitWish = planarWish.Unit
+
+	local currentSpeed = currentVel:Dot(unitWish)
+	local addSpeed = wishSpeed - currentSpeed
+	if addSpeed <= 0 then
+		return currentVel
+	end
+
+	local accelSpeed = accel * dt * wishSpeed
+	if accelSpeed > addSpeed then
+		accelSpeed = addSpeed
+	end
+
+	return currentVel + (unitWish * accelSpeed)
+end
+
+--[[
+	Applies Quake/Source ground friction to the horizontal (XZ) components of currentVel
+	while preserving vertical (Y) velocity.
+]]
+function QuakeMath.ApplyFriction(
+	currentVel: Vector3,
+	friction: number,
+	dt: number,
+	stopSpeed: number?
+): Vector3
+	local planarVel = Vector3.new(currentVel.X, 0, currentVel.Z)
+	local speed = planarVel.Magnitude
+	if speed <= 1e-5 or dt <= 0 or friction <= 0 then
+		return Vector3.new(0, currentVel.Y, 0)
+	end
+
+	local effectiveStopSpeed = stopSpeed or STOP_SPEED_DEFAULT
+	local control = if speed < effectiveStopSpeed then effectiveStopSpeed else speed
+	local drop = control * friction * dt
+
+	local newSpeed = speed - drop
+	if newSpeed < 0 then
+		newSpeed = 0
+	end
+
+	local scale = newSpeed / speed
+	return Vector3.new(currentVel.X * scale, currentVel.Y, currentVel.Z * scale)
+end
+
+--[[
+	Hard-clamps horizontal (XZ) speed to maxSpeed while preserving vertical (Y) velocity.
+]]
+function QuakeMath.ClampPlanarSpeed(vel: Vector3, maxSpeed: number): Vector3
+	if maxSpeed <= 0 then
+		return Vector3.new(0, vel.Y, 0)
+	end
+
+	local planarVel = Vector3.new(vel.X, 0, vel.Z)
+	local planarSpeed = planarVel.Magnitude
+	if planarSpeed <= maxSpeed or planarSpeed <= 1e-6 then
+		return vel
+	end
+
+	local clampedPlanar = planarVel.Unit * maxSpeed
+	return Vector3.new(clampedPlanar.X, vel.Y, clampedPlanar.Z)
+end
+
+return table.freeze(QuakeMath)
+````
+
+## File: src/shared/math/Spring.luau
+````
+--!strict
+--[[
+	Spring.luau
+	3D Hooke's Law damped harmonic oscillator with 8 fixed substeps per update.
+	Used for procedural viewmodel sway, recoil kick, landing bob, and camera tilt.
+]]
+
+local ITERATIONS = 8
+
+local Spring = {}
+Spring.__index = Spring
+
+export type Spring = typeof(setmetatable(
+	{} :: {
+		Target: Vector3,
+		Position: Vector3,
+		Velocity: Vector3,
+		Mass: number,
+		Force: number,
+		Damping: number,
+		Speed: number,
+	},
+	Spring
+))
+
+function Spring.new(mass: number?, force: number?, damping: number?, speed: number?): Spring
+	local self = setmetatable({
+		Target = Vector3.zero,
+		Position = Vector3.zero,
+		Velocity = Vector3.zero,
+		Mass = mass or 5,
+		Force = force or 50,
+		Damping = damping or 4,
+		Speed = speed or 4,
+	}, Spring)
+
+	return self
+end
+
+function Spring.Shove(self: Spring, impulse: Vector3): ()
+	local x = impulse.X
+	local y = impulse.Y
+	local z = impulse.Z
+
+	if x ~= x or x == math.huge or x == -math.huge then
+		x = 0
+	end
+	if y ~= y or y == math.huge or y == -math.huge then
+		y = 0
+	end
+	if z ~= z or z == math.huge or z == -math.huge then
+		z = 0
+	end
+
+	self.Velocity += Vector3.new(x, y, z)
+end
+
+function Spring.Update(self: Spring, dt: number): Vector3
+	local scaledDeltaTime = math.min(dt, 0.1) * self.Speed / ITERATIONS
+	local mass = math.max(self.Mass, 1e-4)
+	local force = self.Force
+	local damping = self.Damping
+	local target = self.Target
+	local position = self.Position
+	local velocity = self.Velocity
+
+	for _ = 1, ITERATIONS do
+		local displacement = target - position
+		local acceleration = (displacement * force) / mass - velocity * damping
+
+		velocity += acceleration * scaledDeltaTime
+		position += velocity * scaledDeltaTime
+	end
+
+	self.Position = position
+	self.Velocity = velocity
+
+	return position
+end
+
+function Spring.Reset(self: Spring): ()
+	self.Target = Vector3.zero
+	self.Position = Vector3.zero
+	self.Velocity = Vector3.zero
+end
+
+return table.freeze(Spring)
+````
+
+## File: asphalt.toml
+````toml
+[creator]
+type = "user"
+id = 0
+
+[codegen]
+style = "nested"
+typescript = false
+strip_extension = true
+
+[inputs.audio]
+path = "assets/audio/**/*"
+output_path = "src/shared/configs"
+
+[inputs.ui_sprites]
+path = "assets/ui_sprites/**/*"
+output_path = "src/shared/configs"
+````
+
+## File: default.project.json
+````json
+{
+  "name": "scifi-bhop-fps",
+  "globIgnorePaths": [
+    "**/.gitkeep",
+    "**/*.blend",
+    "**/*.fbx",
+    "**/*.psd"
+  ],
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "Shared": {
+        "$path": "src/shared"
+      },
+      "Packages": {
+        "$className": "Folder",
+        "$ignoreUnknownInstances": true
+      },
+      "Animations": {
+        "$className": "Folder",
+        "Registry": {
+          "$path": "animations/registry"
+        },
+        "Exported": {
+          "$className": "Folder",
+          "Character3P": {
+            "$path": "animations/exported_rbxm/character_3p"
+          },
+          "Viewmodel": {
+            "$path": "animations/exported_rbxm/viewmodel"
+          }
+        }
+      },
+      "Assets": {
+        "$className": "Folder",
+        "Audio": {
+          "$path": "assets/audio"
+        },
+        "Models": {
+          "$className": "Folder",
+          "Characters": {
+            "$path": "assets/models/characters"
+          },
+          "Viewmodels": {
+            "$path": "assets/models/viewmodels"
+          },
+          "Worldmodels": {
+            "$path": "assets/models/worldmodels"
+          }
+        },
+        "UISprites": {
+          "$path": "assets/ui_sprites"
+        }
+      },
+      "Graphics": {
+        "$className": "Folder",
+        "Materials": {
+          "$path": "graphics/materials"
+        },
+        "Presets": {
+          "$path": "graphics/presets"
+        },
+        "VFXPrefabs": {
+          "$path": "graphics/vfx_prefabs"
+        }
+      }
+    },
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "Server": {
+        "$path": "src/server"
+      }
+    },
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "Client": {
+          "$path": "src/client"
+        }
+      }
+    }
+  }
+}
+````
+
+## File: rokit.toml
+````toml
+# This file lists tools managed by Rokit, a toolchain manager for Roblox projects.
+# For more information, see https://github.com/rojo-rbx/rokit
+
+[tools]
+rojo = "rojo-rbx/rojo@7.4.4"
+wally = "UpliftGames/wally@0.3.2"
+stylua = "JohnnyMorganz/StyLua@0.20.0"
+selene = "Kampfkarren/selene@0.27.1"
+````
+
+## File: wally.toml
+````toml
+[package]
+name = "scifi-bhop/scifi-bhop-fps"
+description = "Competitive Sci-Fi Bunny-Hop Arena FPS"
+version = "0.1.0"
+license = "MIT"
+authors = ["SciFi Bhop Team"]
+registry = "https://github.com/UpliftGames/wally-index"
+realm = "shared"
+
+[dependencies]
+Trove = "sleitnick/trove@1.3.0"
+Signal = "sleitnick/signal@2.0.1"
+````
+
+## File: animations/registry/init.luau
+````
+--!strict
+
+local ViewmodelAnims = require(script:WaitForChild("ViewmodelAnims"))
+local CharacterAnims = require(script:WaitForChild("CharacterAnims"))
+
+export type AnimEntry = ViewmodelAnims.AnimEntry
+export type WeaponAnimSet = ViewmodelAnims.WeaponAnimSet
+export type ViewmodelAnimRegistry = ViewmodelAnims.ViewmodelAnimRegistry
+export type CharacterAnimRegistry = CharacterAnims.CharacterAnimRegistry
+
+local AnimationRegistry = table.freeze({
+	ViewmodelAnims = ViewmodelAnims,
+	CharacterAnims = CharacterAnims,
+})
+
+return AnimationRegistry
+````
+
 ## File: src/client/movement/MovementController.luau
 ````
 --!strict
@@ -4592,769 +6586,6 @@ function SlideController.Step(
 end
 
 return SlideController
-````
-
-## File: src/client/ui/CrosshairModule.luau
-````
---!strict
---[[
-	CrosshairModule.luau
-	Minimalist 4-bracket + center dot velocity-reactive sci-fi reticle.
-	Dynamically expands with MovementController.CurrentPlanarSpeed, tightens during
-	ViewmodelController.IsADS(), and flashes Neon Cyan (body) or Neon Orange/Red (headshot).
-]]
-
-local RunService = game:GetService("RunService")
-
-local clientRoot = script.Parent.Parent
-local MovementController = require(clientRoot:WaitForChild("movement"):WaitForChild("MovementController")) :: any
-local ViewmodelController = require(clientRoot:WaitForChild("viewmodel"):WaitForChild("ViewmodelController")) :: any
-
-local CrosshairModule = {}
-
--- Visual & Telemetry Constants
-local BASE_GAP_PX = 8
-local ADS_GAP_MULTIPLIER = 0.42
-local SPEED_TO_GAP_FACTOR = 0.35
-local MAX_SPEED_GAP_ADDITION = 28
-local GAP_LERP_SPEED = 18
-
-local BRACKET_LENGTH = 8
-local BRACKET_THICKNESS = 2
-local HIT_FLASH_DURATION = 0.18
-
-local COLOR_DEFAULT = Color3.fromRGB(225, 248, 255)
-local COLOR_ADS = Color3.fromRGB(0, 240, 255)
-local COLOR_HIT_BODY = Color3.fromRGB(0, 240, 255) -- #00F0FF Neon Cyan
-local COLOR_HIT_HEAD = Color3.fromRGB(255, 78, 0) -- #FF4E00 Neon Orange/Red
-local COLOR_STROKE = Color3.fromRGB(10, 14, 20)
-
--- Internal State
-local isInitialized = false
-local rootFrame: Frame? = nil
-local centerDot: Frame? = nil
-local topBracket: Frame? = nil
-local bottomBracket: Frame? = nil
-local leftBracket: Frame? = nil
-local rightBracket: Frame? = nil
-local hitTicks: { Frame } = {}
-
-local currentGap = BASE_GAP_PX
-local hitFlashRemaining = 0
-local lastHitHeadshot = false
-local renderConnection: RBXScriptConnection? = nil
-
-local function createBracket(name: string, parent: GuiObject, size: UDim2): Frame
-	local bracket = Instance.new("Frame")
-	bracket.Name = name
-	bracket.AnchorPoint = Vector2.new(0.5, 0.5)
-	bracket.Position = UDim2.fromScale(0.5, 0.5)
-	bracket.Size = size
-	bracket.BackgroundColor3 = COLOR_DEFAULT
-	bracket.BorderSizePixel = 0
-	bracket.Parent = parent
-
-	local stroke = Instance.new("UIStroke")
-	stroke.Color = COLOR_STROKE
-	stroke.Thickness = 1
-	stroke.Transparency = 0.35
-	stroke.Parent = bracket
-
-	return bracket
-end
-
-local function createHitTick(index: number, rotationDeg: number, parent: GuiObject): Frame
-	local holder = Instance.new("Frame")
-	holder.Name = string.format("HitTick_%d", index)
-	holder.AnchorPoint = Vector2.new(0.5, 0.5)
-	holder.Position = UDim2.fromScale(0.5, 0.5)
-	holder.Size = UDim2.fromOffset(2, 7)
-	holder.Rotation = rotationDeg
-	holder.BackgroundColor3 = COLOR_HIT_BODY
-	holder.BackgroundTransparency = 1
-	holder.BorderSizePixel = 0
-	holder.Parent = parent
-
-	return holder
-end
-
-local function readPlanarSpeed(): number
-	if type(MovementController) == "table" then
-		if type(MovementController.CurrentPlanarSpeed) == "number" then
-			return MovementController.CurrentPlanarSpeed
-		elseif type(MovementController.GetPlanarSpeed) == "function" then
-			local ok, val = pcall(MovementController.GetPlanarSpeed)
-			if ok and type(val) == "number" then
-				return val
-			end
-		end
-	end
-	return 0
-end
-
-local function readIsADS(): boolean
-	if type(ViewmodelController) == "table" then
-		if type(ViewmodelController.IsADS) == "function" then
-			local ok, result = pcall(ViewmodelController.IsADS)
-			if ok and type(result) == "boolean" then
-				return result
-			end
-		elseif type(ViewmodelController.IsADS) == "boolean" then
-			return ViewmodelController.IsADS
-		end
-	end
-	return false
-end
-
-local function updateReticle(dt: number)
-	local root = rootFrame
-	local dot = centerDot
-	local topB = topBracket
-	local bottomB = bottomBracket
-	local leftB = leftBracket
-	local rightB = rightBracket
-
-	if not (root and dot and topB and bottomB and leftB and rightB) then
-		return
-	end
-
-	local speed = readPlanarSpeed()
-	local isAds = readIsADS()
-
-	local speedSpread = math.clamp(speed * SPEED_TO_GAP_FACTOR, 0, MAX_SPEED_GAP_ADDITION)
-	local targetGap = BASE_GAP_PX + speedSpread
-	if isAds then
-		targetGap = math.max(3, targetGap * ADS_GAP_MULTIPLIER)
-	end
-
-	local alpha = math.clamp(dt * GAP_LERP_SPEED, 0, 1)
-	currentGap = currentGap + (targetGap - currentGap) * alpha
-
-	-- Hitmarker flash decay
-	local activeColor = if isAds then COLOR_ADS else COLOR_DEFAULT
-	local hitExpand = 0
-
-	if hitFlashRemaining > 0 then
-		hitFlashRemaining = math.max(0, hitFlashRemaining - dt)
-		local flashRatio = hitFlashRemaining / HIT_FLASH_DURATION
-		local flashColor = if lastHitHeadshot then COLOR_HIT_HEAD else COLOR_HIT_BODY
-		activeColor = activeColor:Lerp(flashColor, flashRatio)
-		hitExpand = flashRatio * (if lastHitHeadshot then 5 else 3)
-
-		local tickDist = 10 + flashRatio * 4
-		for i, tick in ipairs(hitTicks) do
-			local angleRad = math.rad((i - 1) * 90 + 45)
-			local ox = math.cos(angleRad) * tickDist
-			local oy = math.sin(angleRad) * tickDist
-			tick.Position = UDim2.new(0.5, math.round(ox), 0.5, math.round(oy))
-			tick.BackgroundColor3 = flashColor
-			tick.BackgroundTransparency = 1 - flashRatio
-		end
-	else
-		for _, tick in ipairs(hitTicks) do
-			tick.BackgroundTransparency = 1
-		end
-	end
-
-	local finalGap = math.round(currentGap + hitExpand)
-
-	dot.BackgroundColor3 = activeColor
-	topB.BackgroundColor3 = activeColor
-	bottomB.BackgroundColor3 = activeColor
-	leftB.BackgroundColor3 = activeColor
-	rightB.BackgroundColor3 = activeColor
-
-	topB.Position = UDim2.new(0.5, 0, 0.5, -(finalGap + BRACKET_LENGTH * 0.5))
-	bottomB.Position = UDim2.new(0.5, 0, 0.5, finalGap + BRACKET_LENGTH * 0.5)
-	leftB.Position = UDim2.new(0.5, -(finalGap + BRACKET_LENGTH * 0.5), 0.5, 0)
-	rightB.Position = UDim2.new(0.5, finalGap + BRACKET_LENGTH * 0.5, 0.5, 0)
-end
-
-function CrosshairModule.Init(parentGui: ScreenGui)
-	if isInitialized then
-		if rootFrame and parentGui then
-			rootFrame.Parent = parentGui
-		end
-		return
-	end
-	isInitialized = true
-
-	local container = Instance.new("Frame")
-	container.Name = "CrosshairContainer"
-	container.AnchorPoint = Vector2.new(0.5, 0.5)
-	container.Position = UDim2.fromScale(0.5, 0.5)
-	container.Size = UDim2.fromOffset(120, 120)
-	container.BackgroundTransparency = 1
-	container.Parent = parentGui
-	rootFrame = container
-
-	-- Center Dot (2x2 px)
-	local dot = Instance.new("Frame")
-	dot.Name = "CenterDot"
-	dot.AnchorPoint = Vector2.new(0.5, 0.5)
-	dot.Position = UDim2.fromScale(0.5, 0.5)
-	dot.Size = UDim2.fromOffset(2, 2)
-	dot.BackgroundColor3 = COLOR_DEFAULT
-	dot.BorderSizePixel = 0
-	dot.Parent = container
-
-	local dotStroke = Instance.new("UIStroke")
-	dotStroke.Color = COLOR_STROKE
-	dotStroke.Thickness = 1
-	dotStroke.Transparency = 0.35
-	dotStroke.Parent = dot
-	centerDot = dot
-
-	-- 4 Minimalist Sci-Fi Brackets
-	topBracket = createBracket("TopBracket", container, UDim2.fromOffset(BRACKET_THICKNESS, BRACKET_LENGTH))
-	bottomBracket = createBracket("BottomBracket", container, UDim2.fromOffset(BRACKET_THICKNESS, BRACKET_LENGTH))
-	leftBracket = createBracket("LeftBracket", container, UDim2.fromOffset(BRACKET_LENGTH, BRACKET_THICKNESS))
-	rightBracket = createBracket("RightBracket", container, UDim2.fromOffset(BRACKET_LENGTH, BRACKET_THICKNESS))
-
-	-- 4 Diagonal Hitmarker Ticks
-	table.clear(hitTicks)
-	for i = 1, 4 do
-		local rot = (i - 1) * 90 + 45
-		table.insert(hitTicks, createHitTick(i, rot, container))
-	end
-
-	renderConnection = RunService.RenderStepped:Connect(updateReticle)
-end
-
-function CrosshairModule.TriggerHitmarker(isHeadshot: boolean)
-	lastHitHeadshot = isHeadshot == true
-	hitFlashRemaining = HIT_FLASH_DURATION
-	currentGap = currentGap + (if lastHitHeadshot then 4 else 2)
-end
-
-return CrosshairModule
-````
-
-## File: src/client/ui/HudApp.luau
-````
---!strict
---[[
-	HudApp.luau
-	Minimalist glassmorphic sci-fi in-game HUD:
-	- Bottom-center Speedometer (00.0 STUDS/S in Enum.Font.Code, shifts #00F0FF -> #FF6E00 above 45 studs/s)
-	- Bottom-right Minimalist Ammo & Weapon Card reading live state from WeaponController
-	- Bottom-left Health Bar tracking LocalPlayer.Character.Humanoid.Health
-]]
-
-local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
-
-local LocalPlayer = Players.LocalPlayer
-local clientRoot = script.Parent.Parent
-
-local MovementController = require(clientRoot:WaitForChild("movement"):WaitForChild("MovementController")) :: any
-local WeaponController = require(clientRoot:WaitForChild("combat"):WaitForChild("WeaponController")) :: any
-local CrosshairModule = require(script.Parent:WaitForChild("CrosshairModule"))
-local LobbyApp = require(script.Parent:WaitForChild("LobbyApp"))
-
--- Optional WeaponData lookup
-local WeaponData: { [string]: any } = {}
-do
-	local sharedFolder = ReplicatedStorage:FindFirstChild("Shared")
-	if sharedFolder then
-		local configs = sharedFolder:FindFirstChild("configs")
-		local weaponDataModule = if configs then configs:FindFirstChild("WeaponData") else nil
-		if weaponDataModule and weaponDataModule:IsA("ModuleScript") then
-			local ok, data = pcall(require, weaponDataModule)
-			if ok and type(data) == "table" then
-				WeaponData = data
-			end
-		end
-	end
-end
-
-local HudApp = {}
-
--- Glassmorphic Visual Constants
-local CARD_BG_COLOR = Color3.fromRGB(10, 14, 20)
-local CARD_BG_TRANSPARENCY = 0.35
-local COLOR_NEON_CYAN = Color3.fromRGB(0, 240, 255) -- #00F0FF
-local COLOR_OVERDRIVE_ORANGE = Color3.fromRGB(255, 110, 0) -- #FF6E00
-local COLOR_CRITICAL_RED = Color3.fromRGB(255, 55, 65)
-local COLOR_TEXT_PRIMARY = Color3.fromRGB(235, 248, 255)
-local COLOR_TEXT_MUTED = Color3.fromRGB(130, 155, 175)
-
-local OVERDRIVE_SPEED_THRESHOLD = 45.0
-local MAX_SPEED_BAR_REFERENCE = 80.0
-
-local DEFAULT_WEAPON_META: { [string]: { DisplayName: string, MagazineSize: number } } = {
-	VORTEX_SMG = { DisplayName = "VORTEX SMG", MagazineSize = 36 },
-	HELIOS_RAIL = { DisplayName = "HELIOS RAIL", MagazineSize = 5 },
-}
-
--- Internal UI References
-local isInitialized = false
-local hudGui: ScreenGui? = nil
-
--- Speedometer Refs
-local speedTextLabel: TextLabel? = nil
-local speedStateLabel: TextLabel? = nil
-local speedFillBar: Frame? = nil
-local speedStroke: UIStroke? = nil
-
--- Health Refs
-local healthValueLabel: TextLabel? = nil
-local healthFillBar: Frame? = nil
-local healthStroke: UIStroke? = nil
-
--- Ammo & Weapon Refs
-local weaponNameLabel: TextLabel? = nil
-local ammoCurrentLabel: TextLabel? = nil
-local ammoMaxLabel: TextLabel? = nil
-local ammoFillBar: Frame? = nil
-local ammoStroke: UIStroke? = nil
-
-local humanoidConnections: { RBXScriptConnection } = {}
-
-local function createGlassCard(name: string, parent: Instance, size: UDim2, position: UDim2, anchorPoint: Vector2): (Frame, UIStroke)
-	local card = Instance.new("Frame")
-	card.Name = name
-	card.Size = size
-	card.Position = position
-	card.AnchorPoint = anchorPoint
-	card.BackgroundColor3 = CARD_BG_COLOR
-	card.BackgroundTransparency = CARD_BG_TRANSPARENCY
-	card.BorderSizePixel = 0
-	card.Parent = parent
-
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 6)
-	corner.Parent = card
-
-	local stroke = Instance.new("UIStroke")
-	stroke.Color = COLOR_NEON_CYAN
-	stroke.Thickness = 1
-	stroke.Transparency = 0.25
-	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-	stroke.Parent = card
-
-	return card, stroke
-end
-
-local function readPlanarSpeed(): number
-	if type(MovementController) == "table" then
-		if type(MovementController.CurrentPlanarSpeed) == "number" then
-			return MovementController.CurrentPlanarSpeed
-		elseif type(MovementController.GetPlanarSpeed) == "function" then
-			local ok, speed = pcall(MovementController.GetPlanarSpeed)
-			if ok and type(speed) == "number" then
-				return speed
-			end
-		end
-	end
-	return 0
-end
-
-local function readWeaponTelemetry(): (string, number, number, boolean)
-	local weaponId = "VORTEX_SMG"
-	local currentAmmo: number? = nil
-	local maxAmmo: number? = nil
-	local isReloading = false
-
-	if type(WeaponController) == "table" then
-		-- Check table properties or getter methods on WeaponController
-		local rawId = WeaponController.CurrentWeaponId
-			or WeaponController.EquippedWeaponId
-			or WeaponController.CurrentWeapon
-			or WeaponController.WeaponId
-		if type(rawId) == "string" and #rawId > 0 then
-			weaponId = rawId
-		elseif type(WeaponController.GetEquippedWeapon) == "function" then
-			local ok, res = pcall(WeaponController.GetEquippedWeapon)
-			if ok and type(res) == "string" and #res > 0 then
-				weaponId = res
-			end
-		end
-
-		if type(WeaponController.CurrentAmmo) == "number" then
-			currentAmmo = WeaponController.CurrentAmmo
-		elseif type(WeaponController.Ammo) == "number" then
-			currentAmmo = WeaponController.Ammo
-		elseif type(WeaponController.GetAmmo) == "function" then
-			local ok, cur, max = pcall(WeaponController.GetAmmo)
-			if ok and type(cur) == "number" then
-				currentAmmo = cur
-				if type(max) == "number" then
-					maxAmmo = max
-				end
-			end
-		end
-
-		if type(WeaponController.MaxAmmo) == "number" then
-			maxAmmo = WeaponController.MaxAmmo
-		elseif type(WeaponController.MagazineSize) == "number" then
-			maxAmmo = WeaponController.MagazineSize
-		end
-
-		if type(WeaponController.IsReloading) == "boolean" then
-			isReloading = WeaponController.IsReloading
-		elseif type(WeaponController.IsReloading) == "function" then
-			local ok, rel = pcall(WeaponController.IsReloading)
-			if ok and type(rel) == "boolean" then
-				isReloading = rel
-			end
-		end
-	end
-
-	local attrWeapon = LocalPlayer:GetAttribute("EquippedWeapon") or LocalPlayer:GetAttribute("SelectedWeapon")
-	if type(attrWeapon) == "string" and #attrWeapon > 0 and weaponId == "VORTEX_SMG" then
-		weaponId = attrWeapon
-	end
-
-	local configEntry = WeaponData[weaponId] or ( WeaponData.Weapons and WeaponData.Weapons[weaponId] )
-	local fallbackMeta = DEFAULT_WEAPON_META[weaponId] or { DisplayName = weaponId, MagazineSize = 30 }
-
-	local resolvedMax = maxAmmo
-		or (if type(configEntry) == "table" then (configEntry.MagazineSize or configEntry.MaxAmmo or configEntry.AmmoCapacity) else nil)
-		or fallbackMeta.MagazineSize
-
-	local resolvedCurrent = currentAmmo or resolvedMax
-	local displayName = (if type(configEntry) == "table" and type(configEntry.DisplayName or configEntry.Name) == "string"
-		then (configEntry.DisplayName or configEntry.Name)
-		else fallbackMeta.DisplayName)
-
-	return string.upper(displayName), math.max(0, math.floor(resolvedCurrent)), math.max(1, math.floor(resolvedMax)), isReloading
-end
-
-local function updateHealthDisplay(health: number, maxHealth: number)
-	local safeMax = if maxHealth > 0 then maxHealth else 100
-	local clampedHealth = math.clamp(health, 0, safeMax)
-	local ratio = clampedHealth / safeMax
-	local isLow = ratio <= 0.35
-	local accentColor = if isLow then COLOR_CRITICAL_RED else COLOR_NEON_CYAN
-
-	if healthValueLabel then
-		healthValueLabel.Text = string.format("%03d", math.ceil(clampedHealth))
-		healthValueLabel.TextColor3 = if isLow then COLOR_CRITICAL_RED else COLOR_TEXT_PRIMARY
-	end
-	if healthFillBar then
-		healthFillBar.Size = UDim2.fromScale(ratio, 1)
-		healthFillBar.BackgroundColor3 = accentColor
-	end
-	if healthStroke then
-		healthStroke.Color = accentColor
-	end
-end
-
-local function bindCharacter(character: Model?)
-	for _, conn in ipairs(humanoidConnections) do
-		conn:Disconnect()
-	end
-	table.clear(humanoidConnections)
-
-	if not character then
-		updateHealthDisplay(100, 100)
-		return
-	end
-
-	local humanoid = character:FindFirstChildOfClass("Humanoid") or character:WaitForChild("Humanoid", 5) :: Humanoid?
-	if humanoid and humanoid:IsA("Humanoid") then
-		updateHealthDisplay(humanoid.Health, humanoid.MaxHealth)
-		table.insert(
-			humanoidConnections,
-			humanoid.HealthChanged:Connect(function(newHealth: number)
-				updateHealthDisplay(newHealth, humanoid.MaxHealth)
-			end)
-		)
-	end
-end
-
-local function updateHudTelemetry()
-	-- 1. Speedometer Update
-	local speed = readPlanarSpeed()
-	local isOverdrive = speed > OVERDRIVE_SPEED_THRESHOLD
-	local speedAccent = if isOverdrive then COLOR_OVERDRIVE_ORANGE else COLOR_NEON_CYAN
-
-	if speedTextLabel then
-		speedTextLabel.Text = string.format("%04.1f STUDS/S", speed)
-		speedTextLabel.TextColor3 = speedAccent
-	end
-	if speedStateLabel then
-		speedStateLabel.Text = if isOverdrive then "OVERDRIVE // BHOP VELOCITY" else "TELEMETRY // PLANAR VELOCITY"
-		speedStateLabel.TextColor3 = if isOverdrive then COLOR_OVERDRIVE_ORANGE else COLOR_TEXT_MUTED
-	end
-	if speedFillBar then
-		local fillRatio = math.clamp(speed / MAX_SPEED_BAR_REFERENCE, 0, 1)
-		speedFillBar.Size = UDim2.fromScale(fillRatio, 1)
-		speedFillBar.BackgroundColor3 = speedAccent
-	end
-	if speedStroke then
-		speedStroke.Color = speedAccent
-	end
-
-	-- 2. Ammo & Weapon Update
-	local weaponName, curAmmo, maxAmmo, isReloading = readWeaponTelemetry()
-	local ammoRatio = math.clamp(curAmmo / math.max(1, maxAmmo), 0, 1)
-	local isLowAmmo = (ammoRatio <= 0.25) or isReloading
-	local ammoAccent = if isReloading then COLOR_OVERDRIVE_ORANGE elseif isLowAmmo then COLOR_CRITICAL_RED else COLOR_NEON_CYAN
-
-	if weaponNameLabel then
-		weaponNameLabel.Text = if isReloading then weaponName .. " // RELOADING" else weaponName
-		weaponNameLabel.TextColor3 = if isReloading then COLOR_OVERDRIVE_ORANGE else COLOR_NEON_CYAN
-	end
-	if ammoCurrentLabel then
-		ammoCurrentLabel.Text = string.format("%02d", curAmmo)
-		ammoCurrentLabel.TextColor3 = if isLowAmmo then ammoAccent else COLOR_TEXT_PRIMARY
-	end
-	if ammoMaxLabel then
-		ammoMaxLabel.Text = string.format("/ %02d", maxAmmo)
-	end
-	if ammoFillBar then
-		ammoFillBar.Size = UDim2.fromScale(ammoRatio, 1)
-		ammoFillBar.BackgroundColor3 = ammoAccent
-	end
-	if ammoStroke then
-		ammoStroke.Color = ammoAccent
-	end
-
-	-- 3. Live Character Health Sync
-	local character = LocalPlayer.Character
-	if character then
-		local humanoid = character:FindFirstChildOfClass("Humanoid")
-		if humanoid then
-			updateHealthDisplay(humanoid.Health, humanoid.MaxHealth)
-		end
-	end
-end
-
-function HudApp.SetVisible(visible: boolean)
-	if hudGui then
-		hudGui.Enabled = visible
-	end
-end
-
-function HudApp.Init()
-	if isInitialized then
-		return
-	end
-	isInitialized = true
-
-	local playerGui = LocalPlayer:WaitForChild("PlayerGui")
-
-	local screenGui = Instance.new("ScreenGui")
-	screenGui.Name = "SciFiHudGui"
-	screenGui.IgnoreGuiInset = true
-	screenGui.ResetOnSpawn = false
-	screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-	screenGui.DisplayOrder = 5
-	screenGui.Parent = playerGui
-	hudGui = screenGui
-
-	-- Initialize Crosshair inside HUD ScreenGui
-	CrosshairModule.Init(screenGui)
-
-	-- =========================================================================
-	-- 1. BOTTOM-CENTER GLASSMORPHIC SPEEDOMETER
-	-- =========================================================================
-	local speedCard, sStroke = createGlassCard(
-		"SpeedometerCard",
-		screenGui,
-		UDim2.fromOffset(250, 66),
-		UDim2.new(0.5, 0, 1, -28),
-		Vector2.new(0.5, 1)
-	)
-	speedStroke = sStroke
-
-	local sState = Instance.new("TextLabel")
-	sState.Name = "StateLabel"
-	sState.BackgroundTransparency = 1
-	sState.Position = UDim2.fromOffset(12, 6)
-	sState.Size = UDim2.new(1, -24, 0, 14)
-	sState.Font = Enum.Font.Code
-	sState.Text = "TELEMETRY // PLANAR VELOCITY"
-	sState.TextSize = 11
-	sState.TextColor3 = COLOR_TEXT_MUTED
-	sState.TextXAlignment = Enum.TextXAlignment.Center
-	sState.Parent = speedCard
-	speedStateLabel = sState
-
-	local sValue = Instance.new("TextLabel")
-	sValue.Name = "SpeedValue"
-	sValue.BackgroundTransparency = 1
-	sValue.Position = UDim2.fromOffset(12, 20)
-	sValue.Size = UDim2.new(1, -24, 0, 28)
-	sValue.Font = Enum.Font.Code
-	sValue.Text = "00.0 STUDS/S"
-	sValue.TextSize = 22
-	sValue.TextColor3 = COLOR_NEON_CYAN
-	sValue.TextXAlignment = Enum.TextXAlignment.Center
-	sValue.Parent = speedCard
-	speedTextLabel = sValue
-
-	local sBarBg = Instance.new("Frame")
-	sBarBg.Name = "VelocityBarBg"
-	sBarBg.Position = UDim2.new(0, 12, 1, -10)
-	sBarBg.Size = UDim2.new(1, -24, 0, 4)
-	sBarBg.BackgroundColor3 = Color3.fromRGB(25, 34, 48)
-	sBarBg.BorderSizePixel = 0
-	sBarBg.Parent = speedCard
-
-	local sBarFill = Instance.new("Frame")
-	sBarFill.Name = "Fill"
-	sBarFill.Size = UDim2.fromScale(0, 1)
-	sBarFill.BackgroundColor3 = COLOR_NEON_CYAN
-	sBarFill.BorderSizePixel = 0
-	sBarFill.Parent = sBarBg
-	speedFillBar = sBarFill
-
-	-- =========================================================================
-	-- 2. BOTTOM-LEFT HEALTH BAR CARD
-	-- =========================================================================
-	local healthCard, hStroke = createGlassCard(
-		"HealthCard",
-		screenGui,
-		UDim2.fromOffset(230, 68),
-		UDim2.new(0, 32, 1, -28),
-		Vector2.new(0, 1)
-	)
-	healthStroke = hStroke
-
-	local hTitle = Instance.new("TextLabel")
-	hTitle.Name = "Header"
-	hTitle.BackgroundTransparency = 1
-	hTitle.Position = UDim2.fromOffset(14, 8)
-	hTitle.Size = UDim2.fromOffset(110, 14)
-	hTitle.Font = Enum.Font.Code
-	hTitle.Text = "VITALS // INTEGRITY"
-	hTitle.TextSize = 11
-	hTitle.TextColor3 = COLOR_TEXT_MUTED
-	hTitle.TextXAlignment = Enum.TextXAlignment.Left
-	hTitle.Parent = healthCard
-
-	local hVal = Instance.new("TextLabel")
-	hVal.Name = "HealthValue"
-	hVal.BackgroundTransparency = 1
-	hVal.Position = UDim2.fromOffset(14, 22)
-	hVal.Size = UDim2.fromOffset(90, 26)
-	hVal.Font = Enum.Font.Code
-	hVal.Text = "100"
-	hVal.TextSize = 24
-	hVal.TextColor3 = COLOR_TEXT_PRIMARY
-	hVal.TextXAlignment = Enum.TextXAlignment.Left
-	hVal.Parent = healthCard
-	healthValueLabel = hVal
-
-	local hUnit = Instance.new("TextLabel")
-	hUnit.Name = "UnitLabel"
-	hUnit.BackgroundTransparency = 1
-	hUnit.Position = UDim2.new(1, -64, 0, 28)
-	hUnit.Size = UDim2.fromOffset(50, 18)
-	hUnit.Font = Enum.Font.Code
-	hUnit.Text = "HP"
-	hUnit.TextSize = 14
-	hUnit.TextColor3 = COLOR_NEON_CYAN
-	hUnit.TextXAlignment = Enum.TextXAlignment.Right
-	hUnit.Parent = healthCard
-
-	local hBarBg = Instance.new("Frame")
-	hBarBg.Name = "HealthBarBg"
-	hBarBg.Position = UDim2.new(0, 14, 1, -12)
-	hBarBg.Size = UDim2.new(1, -28, 0, 5)
-	hBarBg.BackgroundColor3 = Color3.fromRGB(25, 34, 48)
-	hBarBg.BorderSizePixel = 0
-	hBarBg.Parent = healthCard
-
-	local hBarFill = Instance.new("Frame")
-	hBarFill.Name = "Fill"
-	hBarFill.Size = UDim2.fromScale(1, 1)
-	hBarFill.BackgroundColor3 = COLOR_NEON_CYAN
-	hBarFill.BorderSizePixel = 0
-	hBarFill.Parent = hBarBg
-	healthFillBar = hBarFill
-
-	-- =========================================================================
-	-- 3. BOTTOM-RIGHT MINIMALIST AMMO & WEAPON CARD
-	-- =========================================================================
-	local ammoCard, aStroke = createGlassCard(
-		"AmmoWeaponCard",
-		screenGui,
-		UDim2.fromOffset(230, 68),
-		UDim2.new(1, -32, 1, -28),
-		Vector2.new(1, 1)
-	)
-	ammoStroke = aStroke
-
-	local wLabel = Instance.new("TextLabel")
-	wLabel.Name = "WeaponName"
-	wLabel.BackgroundTransparency = 1
-	wLabel.Position = UDim2.fromOffset(14, 8)
-	wLabel.Size = UDim2.new(1, -28, 0, 14)
-	wLabel.Font = Enum.Font.Code
-	wLabel.Text = "VORTEX SMG"
-	wLabel.TextSize = 12
-	wLabel.TextColor3 = COLOR_NEON_CYAN
-	wLabel.TextXAlignment = Enum.TextXAlignment.Right
-	wLabel.Parent = ammoCard
-	weaponNameLabel = wLabel
-
-	local aCur = Instance.new("TextLabel")
-	aCur.Name = "CurrentAmmo"
-	aCur.BackgroundTransparency = 1
-	aCur.Position = UDim2.new(1, -135, 0, 22)
-	aCur.Size = UDim2.fromOffset(65, 26)
-	aCur.Font = Enum.Font.Code
-	aCur.Text = "36"
-	aCur.TextSize = 24
-	aCur.TextColor3 = COLOR_TEXT_PRIMARY
-	aCur.TextXAlignment = Enum.TextXAlignment.Right
-	aCur.Parent = ammoCard
-	ammoCurrentLabel = aCur
-
-	local aMax = Instance.new("TextLabel")
-	aMax.Name = "MaxAmmo"
-	aMax.BackgroundTransparency = 1
-	aMax.Position = UDim2.new(1, -66, 0, 27)
-	aMax.Size = UDim2.fromOffset(52, 20)
-	aMax.Font = Enum.Font.Code
-	aMax.Text = "/ 36"
-	aMax.TextSize = 15
-	aMax.TextColor3 = COLOR_TEXT_MUTED
-	aMax.TextXAlignment = Enum.TextXAlignment.Left
-	aMax.Parent = ammoCard
-	ammoMaxLabel = aMax
-
-	local aBarBg = Instance.new("Frame")
-	aBarBg.Name = "AmmoBarBg"
-	aBarBg.Position = UDim2.new(0, 14, 1, -12)
-	aBarBg.Size = UDim2.new(1, -28, 0, 5)
-	aBarBg.BackgroundColor3 = Color3.fromRGB(25, 34, 48)
-	aBarBg.BorderSizePixel = 0
-	aBarBg.Parent = ammoCard
-
-	local aBarFill = Instance.new("Frame")
-	aBarFill.Name = "Fill"
-	aBarFill.Size = UDim2.fromScale(1, 1)
-	aBarFill.BackgroundColor3 = COLOR_NEON_CYAN
-	aBarFill.BorderSizePixel = 0
-	aBarFill.Parent = aBarBg
-	ammoFillBar = aBarFill
-
-	-- Character & Telemetry Connections
-	if LocalPlayer.Character then
-		bindCharacter(LocalPlayer.Character)
-	end
-	LocalPlayer.CharacterAdded:Connect(bindCharacter)
-
-	RunService.RenderStepped:Connect(updateHudTelemetry)
-
-	-- Sync visibility with Arena attribute & ensure LobbyApp is initialized
-	local function syncArenaVisibility()
-		local inArena = LocalPlayer:GetAttribute("InArena") == true
-		HudApp.SetVisible(inArena)
-	end
-	LocalPlayer:GetAttributeChangedSignal("InArena"):Connect(syncArenaVisibility)
-	syncArenaVisibility()
-
-	LobbyApp.Init()
-end
-
-return HudApp
 ````
 
 ## File: src/client/viewmodel/AnimatorBridge.luau
@@ -6157,801 +7388,6 @@ function ViewmodelController.Init()
 end
 
 return table.freeze(ViewmodelController)
-````
-
-## File: src/client/init.client.luau
-````
---!strict
-
-local function requireClientModule(moduleName: string, directPath: Instance?): any
-	if directPath and directPath:IsA("ModuleScript") then
-		return require(directPath)
-	end
-
-	local found = script:FindFirstChild(moduleName, true)
-	if found and found:IsA("ModuleScript") then
-		return require(found)
-	end
-
-	error(`[ClientBootstrap] Missing required client module: {moduleName}`)
-end
-
-local TracerPool = requireClientModule("TracerPool", script.combat:FindFirstChild("TracerPool"))
-local SlideController = requireClientModule("SlideController", script.movement:FindFirstChild("SlideController"))
-local MovementController = requireClientModule(
-	"MovementController",
-	script.movement:FindFirstChild("MovementController")
-)
-local ViewmodelController = requireClientModule(
-	"ViewmodelController",
-	script.viewmodel:FindFirstChild("ViewmodelController")
-)
-local WeaponController = requireClientModule("WeaponController", script.combat:FindFirstChild("WeaponController"))
-local GraphicsController = requireClientModule(
-	"GraphicsController",
-	script.graphics:FindFirstChild("GraphicsController")
-)
-local VFXController = requireClientModule("VFXController", script.graphics:FindFirstChild("VFXController"))
-local AudioController = requireClientModule("AudioController", script.audio:FindFirstChild("AudioController"))
-local HudApp = requireClientModule("HudApp", script.ui:FindFirstChild("HudApp"))
-local LobbyApp = requireClientModule("LobbyApp", script.ui:FindFirstChild("LobbyApp"))
-
-TracerPool.Init()
-SlideController.Init()
-MovementController.Init()
-ViewmodelController.Init()
-WeaponController.Init()
-GraphicsController.Init()
-VFXController.Init()
-AudioController.Init()
-HudApp.Init()
-LobbyApp.Init()
-````
-
-## File: src/server/combat/CombatValidator.luau
-````
---!strict
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Players = game:GetService("Players")
-local Workspace = game:GetService("Workspace")
-
-local HitboxHistory = require(script.Parent.HitboxHistory)
-local ShotPacket = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("network"):WaitForChild("ShotPacket"))
-local WeaponData = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("configs"):WaitForChild("WeaponData"))
-
-local CombatValidator = {}
-
-local fireEvent: RemoteEvent
-local hitConfirmEvent: RemoteEvent
-
-type WeaponState = {
-	ammo: number,
-	lastShotTime: number,
-	reloadEndTime: number,
-}
-
-type PlayerCombatState = {
-	weapons: { [string]: WeaponState },
-}
-
-local playerStates: { [Player]: PlayerCombatState } = {}
-
-function CombatValidator.Init()
-	fireEvent = ReplicatedStorage:FindFirstChild("FireWeaponBuffer") :: RemoteEvent
-	if not fireEvent then
-		fireEvent = Instance.new("RemoteEvent")
-		fireEvent.Name = "FireWeaponBuffer"
-		fireEvent.Parent = ReplicatedStorage
-	end
-
-	hitConfirmEvent = ReplicatedStorage:FindFirstChild("HitConfirmEvent") :: RemoteEvent
-	if not hitConfirmEvent then
-		hitConfirmEvent = Instance.new("RemoteEvent")
-		hitConfirmEvent.Name = "HitConfirmEvent"
-		hitConfirmEvent.Parent = ReplicatedStorage
-	end
-
-	Players.PlayerAdded:Connect(function(player)
-		local weaponsState = {}
-		for weaponName, data in pairs(WeaponData) do
-			if type(data) == "table" and data.MagazineSize then
-				weaponsState[weaponName] = {
-					ammo = data.MagazineSize,
-					lastShotTime = 0,
-					reloadEndTime = 0,
-				}
-			end
-		end
-		playerStates[player] = {
-			weapons = weaponsState,
-		}
-	end)
-
-	Players.PlayerRemoving:Connect(function(player)
-		playerStates[player] = nil
-	end)
-
-	fireEvent.OnServerEvent:Connect(function(shooter: Player, payload: any)
-		if not payload or typeof(payload) ~= "buffer" then
-			return
-		end
-
-		local success, packet = pcall(function()
-			return ShotPacket.Decode(payload)
-		end)
-
-		if not success or not packet then
-			return
-		end
-
-		local char = shooter.Character
-		if not char then
-			return
-		end
-		local head = char:FindFirstChild("Head")
-		if not head or not head:IsA("BasePart") then
-			return
-		end
-
-		-- Verify origin is within 14 studs of shooterHead.Position
-		local origin = packet.origin or packet.Origin
-		if not origin then
-			return
-		end
-		if (origin - head.Position).Magnitude > 14 then
-			return
-		end
-
-		local weaponName = packet.weaponName or packet.WeaponName or "AssaultRifle"
-		local weaponConfig = WeaponData[weaponName]
-		if not weaponConfig then
-			return
-		end
-
-		local pState = playerStates[shooter]
-		if not pState then
-			return
-		end
-		local wState = pState.weapons[weaponName]
-		if not wState then
-			return
-		end
-
-		local now = Workspace:GetServerTimeNow()
-
-		-- Check reload status
-		if now < wState.reloadEndTime then
-			return
-		end
-
-		-- Check RPM interval
-		local rpm = weaponConfig.RPM or 600
-		local minInterval = 60 / rpm
-		if (now - wState.lastShotTime) < (minInterval * 0.8) then
-			return
-		end
-
-		-- Check ammo
-		if wState.ammo <= 0 then
-			return
-		end
-
-		wState.ammo -= 1
-		wState.lastShotTime = now
-
-		-- Rewind hitboxes to target timestamp
-		local targetTimestamp = packet.timestamp or packet.Timestamp or now
-		local restoreFn = HitboxHistory.RewindToTimestamp(shooter, targetTimestamp)
-
-		-- Execute server raycast
-		local direction = packet.direction or packet.Direction
-		local range = weaponConfig.Range or 10000
-		if not direction then
-			restoreFn()
-			return
-		end
-
-		local raycastParams = RaycastParams.new()
-		raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-		raycastParams.FilterDescendantsInstances = { char }
-		raycastParams.IgnoreWater = true
-
-		local rayResult = Workspace:Raycast(origin, direction.Unit * range, raycastParams)
-
-		-- Restore hitboxes immediately
-		restoreFn()
-
-		-- Apply damage and confirm hit
-		if rayResult and rayResult.Instance then
-			local hitPart = rayResult.Instance
-			local hitModel = hitPart:FindFirstAncestorOfClass("Model")
-			if hitModel then
-				local humanoid = hitModel:FindFirstChildOfClass("Humanoid")
-				if humanoid and humanoid.Health > 0 then
-					local damage = weaponConfig.Damage or 25
-					if hitPart.Name == "Head" then
-						damage *= (weaponConfig.HeadshotMultiplier or 2.0)
-					end
-
-					humanoid:TakeDamage(damage)
-
-					hitConfirmEvent:FireClient(shooter, {
-						hitPosition = rayResult.Position,
-						hitPart = hitPart,
-						isHeadshot = (hitPart.Name == "Head"),
-						damage = damage,
-					})
-				end
-			end
-		end
-	end)
-end
-
-return CombatValidator
-````
-
-## File: src/server/combat/HitboxHistory.luau
-````
---!strict
-local RunService = game:GetService("RunService")
-local Players = game:GetService("Players")
-
-local HitboxHistory = {}
-
-type Snapshot = {
-	time: number,
-	parts: { [BasePart]: { cf: CFrame, anchored: boolean } },
-}
-
-local playerHistories: { [Player]: { Snapshot } } = {}
-local MAX_HISTORY_DURATION = 1.0 -- 1 second
-local MAX_REWIND = 0.45 -- 450ms max rewind
-
-function HitboxHistory.Init()
-	RunService.Heartbeat:Connect(function(dt)
-		local now = workspace:GetServerTimeNow()
-
-		for _, player in ipairs(Players:GetPlayers()) do
-			local character = player.Character
-			if character and character:FindFirstChild("HumanoidRootPart") then
-				if not playerHistories[player] then
-					playerHistories[player] = {}
-				end
-
-				local partsMap = {}
-				for _, desc in ipairs(character:GetDescendants()) do
-					if desc:IsA("BasePart") then
-						partsMap[desc] = {
-							cf = desc.CFrame,
-							anchored = desc.Anchored,
-						}
-					end
-				end
-
-				local history = playerHistories[player]
-				table.insert(history, {
-					time = now,
-					parts = partsMap,
-				})
-
-				-- Prune snapshots older than 1.0 second
-				while #history > 0 and (now - history[1].time) > MAX_HISTORY_DURATION do
-					table.remove(history, 1)
-				end
-			else
-				playerHistories[player] = nil
-			end
-		end
-	end)
-
-	Players.PlayerRemoving:Connect(function(player)
-		playerHistories[player] = nil
-	end)
-end
-
-function HitboxHistory.RewindToTimestamp(shooter: Player, targetTimestamp: number): () -> ()
-	local now = workspace:GetServerTimeNow()
-	local minAllowedTime = now - MAX_REWIND
-	targetTimestamp = math.clamp(targetTimestamp, minAllowedTime, now)
-
-	local originalStates: { [BasePart]: { cf: CFrame, anchored: boolean } } = {}
-
-	for _, player in ipairs(Players:GetPlayers()) do
-		if player ~= shooter then
-			local character = player.Character
-			if character then
-				local history = playerHistories[player]
-				if history and #history > 0 then
-					local s1, s2
-					for i = 1, #history - 1 do
-						if history[i].time <= targetTimestamp and history[i + 1].time >= targetTimestamp then
-							s1 = history[i]
-							s2 = history[i + 1]
-							break
-						end
-					end
-
-					local targetPartsState = nil
-					if s1 and s2 then
-						local alpha = 0
-						if s2.time > s1.time then
-							alpha = (targetTimestamp - s1.time) / (s2.time - s1.time)
-						end
-						targetPartsState = {}
-						for part, data1 in pairs(s1.parts) do
-							local data2 = s2.parts[part]
-							if data2 and part.Parent then
-								originalStates[part] = { cf = part.CFrame, anchored = part.Anchored }
-								targetPartsState[part] = {
-									cf = data1.cf:Lerp(data2.cf, alpha),
-									anchored = true,
-								}
-							end
-						end
-					else
-						-- Fallback to nearest snapshot
-						local nearest = history[1]
-						local minDiff = math.abs(nearest.time - targetTimestamp)
-						for i = 2, #history do
-							local diff = math.abs(history[i].time - targetTimestamp)
-							if diff < minDiff then
-								minDiff = diff
-								nearest = history[i]
-							end
-						end
-						if nearest then
-							targetPartsState = nearest.parts
-						end
-					end
-
-					if targetPartsState then
-						for part, state in pairs(targetPartsState) do
-							if part.Parent then
-								if not originalStates[part] then
-									originalStates[part] = { cf = part.CFrame, anchored = part.Anchored }
-								end
-								part.CFrame = state.cf
-								part.Anchored = state.anchored
-							end
-						end
-					end
-				end
-			end
-		end
-	end
-
-	local restored = false
-	local function restoreFn()
-		if restored then
-			return
-		end
-		restored = true
-		for part, state in pairs(originalStates) do
-			if part.Parent then
-				part.CFrame = state.cf
-				part.Anchored = state.anchored
-			end
-		end
-	end
-
-	return restoreFn
-end
-
-return HitboxHistory
-````
-
-## File: src/server/replication/StanceReplicator.luau
-````
---!strict
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Players = game:GetService("Players")
-
-local StanceReplicator = {}
-
-local stanceSyncEvent: UnreliableRemoteEvent
-
-function StanceReplicator.Init()
-	stanceSyncEvent = ReplicatedStorage:FindFirstChild("StanceSyncBuffer") :: UnreliableRemoteEvent
-	if not stanceSyncEvent then
-		stanceSyncEvent = Instance.new("UnreliableRemoteEvent")
-		stanceSyncEvent.Name = "StanceSyncBuffer"
-		stanceSyncEvent.Parent = ReplicatedStorage
-	end
-
-	stanceSyncEvent.OnServerEvent:Connect(function(sender: Player, packetBuffer: buffer)
-		if typeof(packetBuffer) ~= "buffer" then
-			return
-		end
-
-		if buffer.len(packetBuffer) < 5 then
-			return
-		end
-
-		local success = pcall(function()
-			_ = buffer.readF32(packetBuffer, 0)
-			_ = buffer.readU8(packetBuffer, 4)
-		end)
-
-		if not success then
-			return
-		end
-
-		-- Broadcast stance buffer to all other clients
-		for _, player in ipairs(Players:GetPlayers()) do
-			if player ~= sender then
-				stanceSyncEvent:FireClient(player, sender, packetBuffer)
-			end
-		end
-	end)
-end
-
-return StanceReplicator
-````
-
-## File: src/server/init.server.luau
-````
---!strict
-
-local function requireServerModule(moduleName: string, directPath: Instance?): any
-	if directPath and directPath:IsA("ModuleScript") then
-		return require(directPath)
-	end
-
-	local found = script:FindFirstChild(moduleName, true)
-	if found and found:IsA("ModuleScript") then
-		return require(found)
-	end
-
-	error(`[ServerBootstrap] Missing required server module: {moduleName}`)
-end
-
-local ArenaGenerator = requireServerModule("ArenaGenerator")
-local HitboxHistory = requireServerModule(
-	"HitboxHistory",
-	if script:FindFirstChild("combat") then script.combat:FindFirstChild("HitboxHistory") else nil
-)
-local CombatValidator = requireServerModule(
-	"CombatValidator",
-	if script:FindFirstChild("combat") then script.combat:FindFirstChild("CombatValidator") else nil
-)
-local StanceReplicator = requireServerModule(
-	"StanceReplicator",
-	if script:FindFirstChild("replication") then script.replication:FindFirstChild("StanceReplicator") else nil
-)
-local MatchService = requireServerModule(
-	"MatchService",
-	if script:FindFirstChild("match") then script.match:FindFirstChild("MatchService") else nil
-)
-
-ArenaGenerator.Init()
-HitboxHistory.Init()
-CombatValidator.Init()
-StanceReplicator.Init()
-MatchService.Init()
-````
-
-## File: src/shared/math/QuakeMath.luau
-````
---!strict
---[[
-	QuakeMath.luau
-	Pure vector math library implementing Quake III / Source Engine air-strafe
-	dot-product velocity projection, ground friction decay, and planar speed clamping.
-]]
-
-local STOP_SPEED_DEFAULT = 10
-
-local QuakeMath = {}
-
---[[
-	Projects currentVel onto wishDir and adds acceleration up to wishSpeed.
-	Because projection uses the dot product (currentVel:Dot(wishDir)), strafing
-	nearly perpendicular to currentVel yields a small currentSpeed projection,
-	allowing total planar speed to exceed wishSpeed during air-strafing.
-]]
-function QuakeMath.Accelerate(
-	currentVel: Vector3,
-	wishDir: Vector3,
-	wishSpeed: number,
-	accel: number,
-	dt: number
-): Vector3
-	local planarWish = Vector3.new(wishDir.X, 0, wishDir.Z)
-	if planarWish.Magnitude <= 1e-6 or wishSpeed <= 0 or dt <= 0 then
-		return currentVel
-	end
-	local unitWish = planarWish.Unit
-
-	local currentSpeed = currentVel:Dot(unitWish)
-	local addSpeed = wishSpeed - currentSpeed
-	if addSpeed <= 0 then
-		return currentVel
-	end
-
-	local accelSpeed = accel * dt * wishSpeed
-	if accelSpeed > addSpeed then
-		accelSpeed = addSpeed
-	end
-
-	return currentVel + (unitWish * accelSpeed)
-end
-
---[[
-	Applies Quake/Source ground friction to the horizontal (XZ) components of currentVel
-	while preserving vertical (Y) velocity.
-]]
-function QuakeMath.ApplyFriction(
-	currentVel: Vector3,
-	friction: number,
-	dt: number,
-	stopSpeed: number?
-): Vector3
-	local planarVel = Vector3.new(currentVel.X, 0, currentVel.Z)
-	local speed = planarVel.Magnitude
-	if speed <= 1e-5 or dt <= 0 or friction <= 0 then
-		return Vector3.new(0, currentVel.Y, 0)
-	end
-
-	local effectiveStopSpeed = stopSpeed or STOP_SPEED_DEFAULT
-	local control = if speed < effectiveStopSpeed then effectiveStopSpeed else speed
-	local drop = control * friction * dt
-
-	local newSpeed = speed - drop
-	if newSpeed < 0 then
-		newSpeed = 0
-	end
-
-	local scale = newSpeed / speed
-	return Vector3.new(currentVel.X * scale, currentVel.Y, currentVel.Z * scale)
-end
-
---[[
-	Hard-clamps horizontal (XZ) speed to maxSpeed while preserving vertical (Y) velocity.
-]]
-function QuakeMath.ClampPlanarSpeed(vel: Vector3, maxSpeed: number): Vector3
-	if maxSpeed <= 0 then
-		return Vector3.new(0, vel.Y, 0)
-	end
-
-	local planarVel = Vector3.new(vel.X, 0, vel.Z)
-	local planarSpeed = planarVel.Magnitude
-	if planarSpeed <= maxSpeed or planarSpeed <= 1e-6 then
-		return vel
-	end
-
-	local clampedPlanar = planarVel.Unit * maxSpeed
-	return Vector3.new(clampedPlanar.X, vel.Y, clampedPlanar.Z)
-end
-
-return table.freeze(QuakeMath)
-````
-
-## File: src/shared/math/Spring.luau
-````
---!strict
---[[
-	Spring.luau
-	3D Hooke's Law damped harmonic oscillator with 8 fixed substeps per update.
-	Used for procedural viewmodel sway, recoil kick, landing bob, and camera tilt.
-]]
-
-local ITERATIONS = 8
-
-local Spring = {}
-Spring.__index = Spring
-
-export type Spring = typeof(setmetatable(
-	{} :: {
-		Target: Vector3,
-		Position: Vector3,
-		Velocity: Vector3,
-		Mass: number,
-		Force: number,
-		Damping: number,
-		Speed: number,
-	},
-	Spring
-))
-
-function Spring.new(mass: number?, force: number?, damping: number?, speed: number?): Spring
-	local self = setmetatable({
-		Target = Vector3.zero,
-		Position = Vector3.zero,
-		Velocity = Vector3.zero,
-		Mass = mass or 5,
-		Force = force or 50,
-		Damping = damping or 4,
-		Speed = speed or 4,
-	}, Spring)
-
-	return self
-end
-
-function Spring.Shove(self: Spring, impulse: Vector3): ()
-	local x = impulse.X
-	local y = impulse.Y
-	local z = impulse.Z
-
-	if x ~= x or x == math.huge or x == -math.huge then
-		x = 0
-	end
-	if y ~= y or y == math.huge or y == -math.huge then
-		y = 0
-	end
-	if z ~= z or z == math.huge or z == -math.huge then
-		z = 0
-	end
-
-	self.Velocity += Vector3.new(x, y, z)
-end
-
-function Spring.Update(self: Spring, dt: number): Vector3
-	local scaledDeltaTime = math.min(dt, 0.1) * self.Speed / ITERATIONS
-	local mass = math.max(self.Mass, 1e-4)
-	local force = self.Force
-	local damping = self.Damping
-	local target = self.Target
-	local position = self.Position
-	local velocity = self.Velocity
-
-	for _ = 1, ITERATIONS do
-		local displacement = target - position
-		local acceleration = (displacement * force) / mass - velocity * damping
-
-		velocity += acceleration * scaledDeltaTime
-		position += velocity * scaledDeltaTime
-	end
-
-	self.Position = position
-	self.Velocity = velocity
-
-	return position
-end
-
-function Spring.Reset(self: Spring): ()
-	self.Target = Vector3.zero
-	self.Position = Vector3.zero
-	self.Velocity = Vector3.zero
-end
-
-return table.freeze(Spring)
-````
-
-## File: asphalt.toml
-````toml
-[creator]
-type = "user"
-id = 0
-
-[codegen]
-style = "nested"
-typescript = false
-strip_extension = true
-
-[inputs.audio]
-path = "assets/audio/**/*"
-output_path = "src/shared/configs"
-
-[inputs.ui_sprites]
-path = "assets/ui_sprites/**/*"
-output_path = "src/shared/configs"
-````
-
-## File: default.project.json
-````json
-{
-  "name": "scifi-bhop-fps",
-  "globIgnorePaths": [
-    "**/.gitkeep",
-    "**/*.blend",
-    "**/*.fbx",
-    "**/*.psd"
-  ],
-  "tree": {
-    "$className": "DataModel",
-    "ReplicatedStorage": {
-      "$className": "ReplicatedStorage",
-      "Shared": {
-        "$path": "src/shared"
-      },
-      "Packages": {
-        "$className": "Folder",
-        "$ignoreUnknownInstances": true
-      },
-      "Animations": {
-        "$className": "Folder",
-        "Registry": {
-          "$path": "animations/registry"
-        },
-        "Exported": {
-          "$className": "Folder",
-          "Character3P": {
-            "$path": "animations/exported_rbxm/character_3p"
-          },
-          "Viewmodel": {
-            "$path": "animations/exported_rbxm/viewmodel"
-          }
-        }
-      },
-      "Assets": {
-        "$className": "Folder",
-        "Audio": {
-          "$path": "assets/audio"
-        },
-        "Models": {
-          "$className": "Folder",
-          "Characters": {
-            "$path": "assets/models/characters"
-          },
-          "Viewmodels": {
-            "$path": "assets/models/viewmodels"
-          },
-          "Worldmodels": {
-            "$path": "assets/models/worldmodels"
-          }
-        },
-        "UISprites": {
-          "$path": "assets/ui_sprites"
-        }
-      },
-      "Graphics": {
-        "$className": "Folder",
-        "Materials": {
-          "$path": "graphics/materials"
-        },
-        "Presets": {
-          "$path": "graphics/presets"
-        },
-        "VFXPrefabs": {
-          "$path": "graphics/vfx_prefabs"
-        }
-      }
-    },
-    "ServerScriptService": {
-      "$className": "ServerScriptService",
-      "Server": {
-        "$path": "src/server"
-      }
-    },
-    "StarterPlayer": {
-      "$className": "StarterPlayer",
-      "StarterPlayerScripts": {
-        "$className": "StarterPlayerScripts",
-        "Client": {
-          "$path": "src/client"
-        }
-      }
-    }
-  }
-}
-````
-
-## File: rokit.toml
-````toml
-# This file lists tools managed by Rokit, a toolchain manager for Roblox projects.
-# For more information, see https://github.com/rojo-rbx/rokit
-
-[tools]
-rojo = "rojo-rbx/rojo@7.4.4"
-wally = "UpliftGames/wally@0.3.2"
-stylua = "JohnnyMorganz/StyLua@0.20.0"
-selene = "Kampfkarren/selene@0.27.1"
-````
-
-## File: wally.toml
-````toml
-[package]
-name = "scifi-bhop/scifi-bhop-fps"
-description = "Competitive Sci-Fi Bunny-Hop Arena FPS"
-version = "0.1.0"
-license = "MIT"
-authors = ["SciFi Bhop Team"]
-registry = "https://github.com/UpliftGames/wally-index"
-realm = "shared"
-
-[dependencies]
-Trove = "sleitnick/trove@1.3.0"
-Signal = "sleitnick/signal@2.0.1"
 ````
 
 ## File: src/shared/configs/AssetRegistry.luau

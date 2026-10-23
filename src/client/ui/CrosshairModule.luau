@@ -132,7 +132,6 @@ local function updateReticle(dt: number)
 	local alpha = math.clamp(dt * GAP_LERP_SPEED, 0, 1)
 	currentGap = currentGap + (targetGap - currentGap) * alpha
 
-	-- Hitmarker flash decay
 	local activeColor = if isAds then COLOR_ADS else COLOR_DEFAULT
 	local hitExpand = 0
 
@@ -220,6 +219,9 @@ function CrosshairModule.Init(parentGui: ScreenGui)
 		table.insert(hitTicks, createHitTick(i, rot, container))
 	end
 
+	if renderConnection then
+		renderConnection:Disconnect()
+	end
 	renderConnection = RunService.RenderStepped:Connect(updateReticle)
 end
 

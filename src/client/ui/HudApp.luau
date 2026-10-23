@@ -5,6 +5,7 @@
 	- Bottom-center Speedometer (00.0 STUDS/S in Enum.Font.Code, shifts #00F0FF -> #FF6E00 above 45 studs/s)
 	- Bottom-right Minimalist Ammo & Weapon Card reading live state from WeaponController
 	- Bottom-left Health Bar tracking LocalPlayer.Character.Humanoid.Health
+	- Top-right KILLS / DEATHS / PEAK SPEED mini-telemetry badge
 ]]
 
 local Players = game:GetService("Players")
@@ -19,10 +20,10 @@ local WeaponController = require(clientRoot:WaitForChild("combat"):WaitForChild(
 local CrosshairModule = require(script.Parent:WaitForChild("CrosshairModule"))
 local LobbyApp = require(script.Parent:WaitForChild("LobbyApp"))
 
--- Optional WeaponData lookup
+-- Shared WeaponData lookup
 local WeaponData: { [string]: any } = {}
 do
-	local sharedFolder = ReplicatedStorage:FindFirstChild("Shared")
+	local sharedFolder = ReplicatedStorage:FindFirstChild("Shared") or ReplicatedStorage:WaitForChild("Shared", 5)
 	if sharedFolder then
 		local configs = sharedFolder:FindFirstChild("configs")
 		local weaponDataModule = if configs then configs:FindFirstChild("WeaponData") else nil
@@ -50,7 +51,7 @@ local OVERDRIVE_SPEED_THRESHOLD = 45.0
 local MAX_SPEED_BAR_REFERENCE = 80.0
 
 local DEFAULT_WEAPON_META: { [string]: { DisplayName: string, MagazineSize: number } } = {
-	VORTEX_SMG = { DisplayName = "VORTEX SMG", MagazineSize = 36 },
+	VORTEX_SMG = { DisplayName = "VORTEX SMG", MagazineSize = 30 },
 	HELIOS_RAIL = { DisplayName = "HELIOS RAIL", MagazineSize = 5 },
 }
 
@@ -76,9 +77,21 @@ local ammoMaxLabel: TextLabel? = nil
 local ammoFillBar: Frame? = nil
 local ammoStroke: UIStroke? = nil
 
+-- Top-Right Telemetry Badge Refs
+local killsValueLabel: TextLabel? = nil
+local deathsValueLabel: TextLabel? = nil
+local peakSpeedValueLabel: TextLabel? = nil
+local telemetryStroke: UIStroke? = nil
+
 local humanoidConnections: { RBXScriptConnection } = {}
 
-local function createGlassCard(name: string, parent: Instance, size: UDim2, position: UDim2, anchorPoint: Vector2): (Frame, UIStroke)
+local function createGlassCard(
+	name: string,
+	parent: Instance,
+	size: UDim2,
+	position: UDim2,
+	anchorPoint: Vector2
+): (Frame, UIStroke)
 	local card = Instance.new("Frame")
 	card.Name = name
 	card.Size = size
@@ -124,7 +137,6 @@ local function readWeaponTelemetry(): (string, number, number, boolean)
 	local isReloading = false
 
 	if type(WeaponController) == "table" then
-		-- Check table properties or getter methods on WeaponController
 		local rawId = WeaponController.CurrentWeaponId
 			or WeaponController.EquippedWeaponId
 			or WeaponController.CurrentWeapon
@@ -173,19 +185,28 @@ local function readWeaponTelemetry(): (string, number, number, boolean)
 		weaponId = attrWeapon
 	end
 
-	local configEntry = WeaponData[weaponId] or ( WeaponData.Weapons and WeaponData.Weapons[weaponId] )
+	local configEntry = WeaponData[weaponId] or (WeaponData.Weapons and WeaponData.Weapons[weaponId])
 	local fallbackMeta = DEFAULT_WEAPON_META[weaponId] or { DisplayName = weaponId, MagazineSize = 30 }
 
 	local resolvedMax = maxAmmo
-		or (if type(configEntry) == "table" then (configEntry.MagazineSize or configEntry.MaxAmmo or configEntry.AmmoCapacity) else nil)
+		or (
+			if type(configEntry) == "table"
+				then (configEntry.MagazineSize or configEntry.MaxAmmo or configEntry.AmmoCapacity)
+				else nil
+		)
 		or fallbackMeta.MagazineSize
 
 	local resolvedCurrent = currentAmmo or resolvedMax
-	local displayName = (if type(configEntry) == "table" and type(configEntry.DisplayName or configEntry.Name) == "string"
-		then (configEntry.DisplayName or configEntry.Name)
-		else fallbackMeta.DisplayName)
+	local displayName = (
+		if type(configEntry) == "table" and type(configEntry.DisplayName or configEntry.Name) == "string"
+			then (configEntry.DisplayName or configEntry.Name)
+			else fallbackMeta.DisplayName
+	)
 
-	return string.upper(displayName), math.max(0, math.floor(resolvedCurrent)), math.max(1, math.floor(resolvedMax)), isReloading
+	return string.upper(displayName),
+		math.max(0, math.floor(resolvedCurrent)),
+		math.max(1, math.floor(resolvedMax)),
+		isReloading
 end
 
 local function updateHealthDisplay(health: number, maxHealth: number)
@@ -205,6 +226,37 @@ local function updateHealthDisplay(health: number, maxHealth: number)
 	end
 	if healthStroke then
 		healthStroke.Color = accentColor
+	end
+end
+
+local function updateTopRightTelemetryBadge()
+	local rawKills = LocalPlayer:GetAttribute("Kills")
+	local rawDeaths = LocalPlayer:GetAttribute("Deaths")
+	local rawTopSpeed = LocalPlayer:GetAttribute("TopBhopSpeed")
+
+	local kills = if type(rawKills) == "number" then math.max(0, math.floor(rawKills)) else 0
+	local deaths = if type(rawDeaths) == "number" then math.max(0, math.floor(rawDeaths)) else 0
+	local topSpeed = if type(rawTopSpeed) == "number" then math.max(0, rawTopSpeed) else 0.0
+
+	local planarSpeed = readPlanarSpeed()
+	if planarSpeed > topSpeed then
+		topSpeed = planarSpeed
+	end
+
+	local isOverdrivePeak = topSpeed > OVERDRIVE_SPEED_THRESHOLD
+
+	if killsValueLabel then
+		killsValueLabel.Text = string.format("%02d", kills)
+	end
+	if deathsValueLabel then
+		deathsValueLabel.Text = string.format("%02d", deaths)
+	end
+	if peakSpeedValueLabel then
+		peakSpeedValueLabel.Text = string.format("%04.1f", topSpeed)
+		peakSpeedValueLabel.TextColor3 = if isOverdrivePeak then COLOR_OVERDRIVE_ORANGE else COLOR_NEON_CYAN
+	end
+	if telemetryStroke then
+		telemetryStroke.Color = if isOverdrivePeak then COLOR_OVERDRIVE_ORANGE else COLOR_NEON_CYAN
 	end
 end
 
@@ -258,7 +310,10 @@ local function updateHudTelemetry()
 	local weaponName, curAmmo, maxAmmo, isReloading = readWeaponTelemetry()
 	local ammoRatio = math.clamp(curAmmo / math.max(1, maxAmmo), 0, 1)
 	local isLowAmmo = (ammoRatio <= 0.25) or isReloading
-	local ammoAccent = if isReloading then COLOR_OVERDRIVE_ORANGE elseif isLowAmmo then COLOR_CRITICAL_RED else COLOR_NEON_CYAN
+	local ammoAccent = if isReloading
+		then COLOR_OVERDRIVE_ORANGE
+		elseif isLowAmmo then COLOR_CRITICAL_RED
+		else COLOR_NEON_CYAN
 
 	if weaponNameLabel then
 		weaponNameLabel.Text = if isReloading then weaponName .. " // RELOADING" else weaponName
@@ -279,7 +334,10 @@ local function updateHudTelemetry()
 		ammoStroke.Color = ammoAccent
 	end
 
-	-- 3. Live Character Health Sync
+	-- 3. Top-Right Kills / Deaths / Peak Speed Telemetry
+	updateTopRightTelemetryBadge()
+
+	-- 4. Live Character Health Sync
 	local character = LocalPlayer.Character
 	if character then
 		local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -315,8 +373,107 @@ function HudApp.Init()
 	-- Initialize Crosshair inside HUD ScreenGui
 	CrosshairModule.Init(screenGui)
 
+	-- Register CrosshairModule.TriggerHitmarker into WeaponController.OnHitConfirmed
+	if type(WeaponController) == "table" then
+		local existingHook = WeaponController.OnHitConfirmed
+		if existingHook == nil then
+			WeaponController.OnHitConfirmed = CrosshairModule.TriggerHitmarker
+		elseif typeof(existingHook) == "Instance" and existingHook:IsA("BindableEvent") then
+			existingHook.Event:Connect(CrosshairModule.TriggerHitmarker)
+		elseif type(existingHook) == "table" and type(existingHook.Connect) == "function" then
+			existingHook:Connect(CrosshairModule.TriggerHitmarker)
+		end
+	end
+
 	-- =========================================================================
-	-- 1. BOTTOM-CENTER GLASSMORPHIC SPEEDOMETER
+	-- 1. TOP-RIGHT MINI-TELEMETRY BADGE (KILLS / DEATHS / PEAK SPEED)
+	-- =========================================================================
+	local telemetryCard, tStroke = createGlassCard(
+		"TelemetryBadgeCard",
+		screenGui,
+		UDim2.fromOffset(276, 54),
+		UDim2.new(1, -32, 0, 24),
+		Vector2.new(1, 0)
+	)
+	telemetryStroke = tStroke
+
+	local killsHeader = Instance.new("TextLabel")
+	killsHeader.Name = "KillsHeader"
+	killsHeader.BackgroundTransparency = 1
+	killsHeader.Position = UDim2.fromOffset(14, 7)
+	killsHeader.Size = UDim2.fromOffset(64, 13)
+	killsHeader.Font = Enum.Font.Code
+	killsHeader.Text = "KILLS"
+	killsHeader.TextSize = 11
+	killsHeader.TextColor3 = COLOR_TEXT_MUTED
+	killsHeader.TextXAlignment = Enum.TextXAlignment.Left
+	killsHeader.Parent = telemetryCard
+
+	local killsVal = Instance.new("TextLabel")
+	killsVal.Name = "KillsValue"
+	killsVal.BackgroundTransparency = 1
+	killsVal.Position = UDim2.fromOffset(14, 22)
+	killsVal.Size = UDim2.fromOffset(64, 24)
+	killsVal.Font = Enum.Font.Code
+	killsVal.Text = "00"
+	killsVal.TextSize = 20
+	killsVal.TextColor3 = COLOR_TEXT_PRIMARY
+	killsVal.TextXAlignment = Enum.TextXAlignment.Left
+	killsVal.Parent = telemetryCard
+	killsValueLabel = killsVal
+
+	local deathsHeader = Instance.new("TextLabel")
+	deathsHeader.Name = "DeathsHeader"
+	deathsHeader.BackgroundTransparency = 1
+	deathsHeader.Position = UDim2.fromOffset(92, 7)
+	deathsHeader.Size = UDim2.fromOffset(64, 13)
+	deathsHeader.Font = Enum.Font.Code
+	deathsHeader.Text = "DEATHS"
+	deathsHeader.TextSize = 11
+	deathsHeader.TextColor3 = COLOR_TEXT_MUTED
+	deathsHeader.TextXAlignment = Enum.TextXAlignment.Left
+	deathsHeader.Parent = telemetryCard
+
+	local deathsVal = Instance.new("TextLabel")
+	deathsVal.Name = "DeathsValue"
+	deathsVal.BackgroundTransparency = 1
+	deathsVal.Position = UDim2.fromOffset(92, 22)
+	deathsVal.Size = UDim2.fromOffset(64, 24)
+	deathsVal.Font = Enum.Font.Code
+	deathsVal.Text = "00"
+	deathsVal.TextSize = 20
+	deathsVal.TextColor3 = COLOR_TEXT_PRIMARY
+	deathsVal.TextXAlignment = Enum.TextXAlignment.Left
+	deathsVal.Parent = telemetryCard
+	deathsValueLabel = deathsVal
+
+	local peakHeader = Instance.new("TextLabel")
+	peakHeader.Name = "PeakHeader"
+	peakHeader.BackgroundTransparency = 1
+	peakHeader.Position = UDim2.new(1, -110, 0, 7)
+	peakHeader.Size = UDim2.fromOffset(96, 13)
+	peakHeader.Font = Enum.Font.Code
+	peakHeader.Text = "PEAK STUDS/S"
+	peakHeader.TextSize = 11
+	peakHeader.TextColor3 = COLOR_TEXT_MUTED
+	peakHeader.TextXAlignment = Enum.TextXAlignment.Right
+	peakHeader.Parent = telemetryCard
+
+	local peakVal = Instance.new("TextLabel")
+	peakVal.Name = "PeakSpeedValue"
+	peakVal.BackgroundTransparency = 1
+	peakVal.Position = UDim2.new(1, -110, 0, 22)
+	peakVal.Size = UDim2.fromOffset(96, 24)
+	peakVal.Font = Enum.Font.Code
+	peakVal.Text = "00.0"
+	peakVal.TextSize = 20
+	peakVal.TextColor3 = COLOR_NEON_CYAN
+	peakVal.TextXAlignment = Enum.TextXAlignment.Right
+	peakVal.Parent = telemetryCard
+	peakSpeedValueLabel = peakVal
+
+	-- =========================================================================
+	-- 2. BOTTOM-CENTER GLASSMORPHIC SPEEDOMETER
 	-- =========================================================================
 	local speedCard, sStroke = createGlassCard(
 		"SpeedometerCard",
@@ -370,7 +527,7 @@ function HudApp.Init()
 	speedFillBar = sBarFill
 
 	-- =========================================================================
-	-- 2. BOTTOM-LEFT HEALTH BAR CARD
+	-- 3. BOTTOM-LEFT HEALTH BAR CARD
 	-- =========================================================================
 	local healthCard, hStroke = createGlassCard(
 		"HealthCard",
@@ -435,7 +592,7 @@ function HudApp.Init()
 	healthFillBar = hBarFill
 
 	-- =========================================================================
-	-- 3. BOTTOM-RIGHT MINIMALIST AMMO & WEAPON CARD
+	-- 4. BOTTOM-RIGHT MINIMALIST AMMO & WEAPON CARD
 	-- =========================================================================
 	local ammoCard, aStroke = createGlassCard(
 		"AmmoWeaponCard",
@@ -465,7 +622,7 @@ function HudApp.Init()
 	aCur.Position = UDim2.new(1, -135, 0, 22)
 	aCur.Size = UDim2.fromOffset(65, 26)
 	aCur.Font = Enum.Font.Code
-	aCur.Text = "36"
+	aCur.Text = "30"
 	aCur.TextSize = 24
 	aCur.TextColor3 = COLOR_TEXT_PRIMARY
 	aCur.TextXAlignment = Enum.TextXAlignment.Right
@@ -478,7 +635,7 @@ function HudApp.Init()
 	aMax.Position = UDim2.new(1, -66, 0, 27)
 	aMax.Size = UDim2.fromOffset(52, 20)
 	aMax.Font = Enum.Font.Code
-	aMax.Text = "/ 36"
+	aMax.Text = "/ 30"
 	aMax.TextSize = 15
 	aMax.TextColor3 = COLOR_TEXT_MUTED
 	aMax.TextXAlignment = Enum.TextXAlignment.Left
@@ -501,11 +658,16 @@ function HudApp.Init()
 	aBarFill.Parent = aBarBg
 	ammoFillBar = aBarFill
 
-	-- Character & Telemetry Connections
+	-- Character & Attribute Telemetry Connections
 	if LocalPlayer.Character then
 		bindCharacter(LocalPlayer.Character)
 	end
 	LocalPlayer.CharacterAdded:Connect(bindCharacter)
+
+	LocalPlayer:GetAttributeChangedSignal("Kills"):Connect(updateTopRightTelemetryBadge)
+	LocalPlayer:GetAttributeChangedSignal("Deaths"):Connect(updateTopRightTelemetryBadge)
+	LocalPlayer:GetAttributeChangedSignal("TopBhopSpeed"):Connect(updateTopRightTelemetryBadge)
+	updateTopRightTelemetryBadge()
 
 	RunService.RenderStepped:Connect(updateHudTelemetry)
 

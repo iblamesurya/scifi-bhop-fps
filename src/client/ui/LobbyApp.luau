@@ -2,10 +2,10 @@
 --[[
 	LobbyApp.luau
 	Sleek glassmorphic sci-fi pre-spawn Lobby / Loadout overlay.
-	- Active when LocalPlayer:GetAttribute("InArena") ~= true
-	- Weapon selection: VORTEX_SMG or HELIOS_RAIL
+	- Active when LocalPlayer:GetAttribute("InArena") ~= true or toggled via M / B keybind
+	- Weapon selection: VORTEX_SMG or HELIOS_RAIL (dynamically synced with WeaponData.luau)
 	- "Competitive 240FPS Mode" toggle
-	- Live Top Server B-Hop Speed Records board
+	- Live Top Server B-Hop Speed Records board reading player:GetAttribute("TopBhopSpeed")
 	- "DEPLOY TO ARENA" button firing ReplicatedStorage:WaitForChild("RequestDeploy"):FireServer(selectedWeaponId)
 ]]
 
@@ -18,6 +18,22 @@ local LocalPlayer = Players.LocalPlayer
 local clientRoot = script.Parent.Parent
 
 local MovementController = require(clientRoot:WaitForChild("movement"):WaitForChild("MovementController")) :: any
+
+-- Shared WeaponData module lookup
+local WeaponData: { [string]: any } = {}
+do
+	local sharedFolder = ReplicatedStorage:FindFirstChild("Shared") or ReplicatedStorage:WaitForChild("Shared", 5)
+	if sharedFolder then
+		local configs = sharedFolder:FindFirstChild("configs")
+		local weaponDataModule = if configs then configs:FindFirstChild("WeaponData") else nil
+		if weaponDataModule and weaponDataModule:IsA("ModuleScript") then
+			local ok, mod = pcall(require, weaponDataModule)
+			if ok and type(mod) == "table" then
+				WeaponData = mod
+			end
+		end
+	end
+end
 
 -- Optional GraphicsController & WeaponController bridges
 local GraphicsController: any = nil
@@ -60,7 +76,10 @@ type WeaponOption = {
 	Id: string,
 	Title: string,
 	Class: string,
-	StatsText: string,
+	DefaultDmg: number,
+	DefaultHs: number,
+	DefaultRpm: number,
+	DefaultMag: number,
 	Description: string,
 }
 
@@ -69,14 +88,20 @@ local WEAPON_OPTIONS: { WeaponOption } = {
 		Id = "VORTEX_SMG",
 		Title = "VORTEX_SMG",
 		Class = "PLASMA SUBMACHINE GUN // CQC-VELOCITY",
-		StatsText = "DMG: 18 (32 HS)  |  ROF: 900 RPM  |  MAG: 36",
+		DefaultDmg = 18,
+		DefaultHs = 36,
+		DefaultRpm = 720,
+		DefaultMag = 30,
 		Description = "High-cadence plasma repeater engineered for aggressive mid-air tracking at 45+ studs/s.",
 	},
 	{
 		Id = "HELIOS_RAIL",
 		Title = "HELIOS_RAIL",
 		Class = "LINEAR ACCELERATOR RAILGUN // PRECISION",
-		StatsText = "DMG: 75 (150 HS) |  ROF: 75 RPM   |  MAG: 05",
+		DefaultDmg = 95,
+		DefaultHs = 237,
+		DefaultRpm = 51,
+		DefaultMag = 5,
 		Description = "Instantaneous hyper-velocity slug projector rewarding pinpoint flick accuracy while B-hopping.",
 	},
 }
@@ -94,12 +119,53 @@ local isInitialized = false
 local lobbyGui: ScreenGui? = nil
 local selectedWeaponId = "VORTEX_SMG"
 local competitive240Mode = false
+local manualOverlayOpen = false
 local localPeakSpeed = 0.0
 
-local weaponCardRefs: { [string]: { Card: Frame, Stroke: UIStroke, Badge: TextLabel } } = {}
+local weaponCardRefs: { [string]: { Card: Frame, Stroke: UIStroke, Badge: TextLabel, StatsLabel: TextLabel } } = {}
 local recordRowLabels: { TextLabel } = {}
 local toggleStrokeRef: UIStroke? = nil
 local toggleStateLabelRef: TextLabel? = nil
+
+local function buildWeaponStatsText(option: WeaponOption): string
+	local entry = WeaponData[option.Id] or (WeaponData.Weapons and WeaponData.Weapons[option.Id])
+	local dmg = option.DefaultDmg
+	local hs = option.DefaultHs
+	local rpm = option.DefaultRpm
+	local mag = option.DefaultMag
+
+	if type(entry) == "table" then
+		local rawDmg = entry.BaseDamage or entry.Damage
+		if type(rawDmg) == "number" then
+			dmg = math.floor(rawDmg)
+		end
+
+		if type(entry.HeadshotDamage) == "number" then
+			hs = math.floor(entry.HeadshotDamage)
+		elseif type(entry.HeadshotMultiplier) == "number" then
+			hs = math.floor(dmg * entry.HeadshotMultiplier)
+		end
+
+		if type(entry.FireRateRPM) == "number" then
+			rpm = math.round(entry.FireRateRPM)
+		elseif type(entry.RPM) == "number" then
+			rpm = math.round(entry.RPM)
+		elseif type(entry.FireInterval) == "number" and entry.FireInterval > 0 then
+			rpm = math.round(60 / entry.FireInterval)
+		elseif type(entry.FireCooldown) == "number" and entry.FireCooldown > 0 then
+			rpm = math.round(60 / entry.FireCooldown)
+		elseif type(entry.FireRate) == "number" and entry.FireRate > 0 then
+			rpm = if entry.FireRate > 25 then math.round(entry.FireRate) else math.round(60 / entry.FireRate)
+		end
+
+		local rawMag = entry.MagazineSize or entry.MaxAmmo or entry.AmmoCapacity
+		if type(rawMag) == "number" then
+			mag = math.floor(rawMag)
+		end
+	end
+
+	return string.format("DMG: %d (%d HS) | ROF: %d RPM | MAG: %02d", dmg, hs, rpm, mag)
+end
 
 local function styleGlassPanel(frame: GuiObject, strokeColor: Color3, strokeThickness: number?): UIStroke
 	frame.BackgroundColor3 = CARD_BG_COLOR
@@ -121,13 +187,17 @@ local function styleGlassPanel(frame: GuiObject, strokeColor: Color3, strokeThic
 end
 
 local function updateWeaponSelectionVisuals()
-	for id, refs in pairs(weaponCardRefs) do
-		local isSelected = (id == selectedWeaponId)
-		refs.Stroke.Color = if isSelected then COLOR_NEON_CYAN else COLOR_BORDER_IDLE
-		refs.Stroke.Thickness = if isSelected then 2 else 1
-		refs.Card.BackgroundTransparency = if isSelected then 0.2 else CARD_TRANSPARENCY
-		refs.Badge.Text = if isSelected then "SELECTED // ACTIVE" else "CLICK TO EQUIP"
-		refs.Badge.TextColor3 = if isSelected then COLOR_NEON_CYAN else COLOR_TEXT_SUB
+	for _, option in ipairs(WEAPON_OPTIONS) do
+		local refs = weaponCardRefs[option.Id]
+		if refs then
+			local isSelected = (option.Id == selectedWeaponId)
+			refs.Stroke.Color = if isSelected then COLOR_NEON_CYAN else COLOR_BORDER_IDLE
+			refs.Stroke.Thickness = if isSelected then 2 else 1
+			refs.Card.BackgroundTransparency = if isSelected then 0.2 else CARD_TRANSPARENCY
+			refs.Badge.Text = if isSelected then "SELECTED // ACTIVE" else "CLICK TO EQUIP"
+			refs.Badge.TextColor3 = if isSelected then COLOR_NEON_CYAN else COLOR_TEXT_SUB
+			refs.StatsLabel.Text = buildWeaponStatsText(option)
+		end
 	end
 
 	LocalPlayer:SetAttribute("SelectedWeapon", selectedWeaponId)
@@ -172,7 +242,8 @@ local function refreshSpeedRecords()
 	local seenNames: { [string]: boolean } = {}
 
 	for _, player in ipairs(Players:GetPlayers()) do
-		local attrSpeed = player:GetAttribute("PeakSpeed")
+		local attrSpeed = player:GetAttribute("TopBhopSpeed")
+			or player:GetAttribute("PeakSpeed")
 			or player:GetAttribute("TopSpeed")
 			or player:GetAttribute("BestBhopSpeed")
 			or player:GetAttribute("MaxSpeed")
@@ -209,16 +280,9 @@ local function refreshSpeedRecords()
 	end
 end
 
-local function handleDeployClicked()
-	local requestDeploy = ReplicatedStorage:WaitForChild("RequestDeploy", 5)
-	if requestDeploy and requestDeploy:IsA("RemoteEvent") then
-		requestDeploy:FireServer(selectedWeaponId)
-	end
-end
-
 local function syncLobbyState()
 	local inArena = LocalPlayer:GetAttribute("InArena") == true
-	local showLobby = not inArena
+	local showLobby = (not inArena) or manualOverlayOpen
 
 	if lobbyGui then
 		lobbyGui.Enabled = showLobby
@@ -227,7 +291,21 @@ local function syncLobbyState()
 	if showLobby then
 		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
 		UserInputService.MouseIconEnabled = true
+		updateWeaponSelectionVisuals()
 		refreshSpeedRecords()
+	else
+		UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+		UserInputService.MouseIconEnabled = false
+	end
+end
+
+local function handleDeployClicked()
+	manualOverlayOpen = false
+	syncLobbyState()
+
+	local requestDeploy = ReplicatedStorage:WaitForChild("RequestDeploy", 5)
+	if requestDeploy and requestDeploy:IsA("RemoteEvent") then
+		requestDeploy:FireServer(selectedWeaponId)
 	end
 end
 
@@ -285,7 +363,7 @@ function LobbyApp.Init()
 	subtitleLabel.Position = UDim2.fromOffset(24, 44)
 	subtitleLabel.Size = UDim2.new(1, -48, 0, 16)
 	subtitleLabel.Font = Enum.Font.Code
-	subtitleLabel.Text = "SELECT PRIMARY ARMAMENT, CONFIGURE 240HZ PIPELINE, AND DEPLOY TO ARENA"
+	subtitleLabel.Text = "SELECT PRIMARY ARMAMENT, CONFIGURE 240HZ PIPELINE, AND DEPLOY [KEYBIND: M / B]"
 	subtitleLabel.TextSize = 12
 	subtitleLabel.TextColor3 = COLOR_TEXT_SUB
 	subtitleLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -353,7 +431,7 @@ function LobbyApp.Init()
 		statsLabel.Position = UDim2.fromOffset(16, 54)
 		statsLabel.Size = UDim2.new(1, -32, 0, 18)
 		statsLabel.Font = Enum.Font.Code
-		statsLabel.Text = weapon.StatsText
+		statsLabel.Text = buildWeaponStatsText(weapon)
 		statsLabel.TextSize = 12
 		statsLabel.TextColor3 = COLOR_OVERDRIVE_ORANGE
 		statsLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -388,6 +466,7 @@ function LobbyApp.Init()
 			Card = card,
 			Stroke = stroke,
 			Badge = badge,
+			StatsLabel = statsLabel,
 		}
 	end
 
@@ -503,12 +582,30 @@ function LobbyApp.Init()
 
 	deployBtn.Activated:Connect(handleDeployClicked)
 
+	-- Keybind (M or B) to reopen/toggle Loadout overlay while in Arena
+	UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessed: boolean)
+		if gameProcessed then
+			return
+		end
+		if input.KeyCode == Enum.KeyCode.M or input.KeyCode == Enum.KeyCode.B then
+			if LocalPlayer:GetAttribute("InArena") == true then
+				manualOverlayOpen = not manualOverlayOpen
+				syncLobbyState()
+			end
+		end
+	end)
+
 	-- Initialize defaults & bind reactive listeners
 	updateWeaponSelectionVisuals()
 	applyCompetitiveMode(false)
 	refreshSpeedRecords()
 
-	LocalPlayer:GetAttributeChangedSignal("InArena"):Connect(syncLobbyState)
+	LocalPlayer:GetAttributeChangedSignal("InArena"):Connect(function()
+		if LocalPlayer:GetAttribute("InArena") == true then
+			manualOverlayOpen = false
+		end
+		syncLobbyState()
+	end)
 	syncLobbyState()
 
 	RunService.Heartbeat:Connect(function()

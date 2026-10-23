@@ -9,10 +9,14 @@ local WeaponData = require(Shared:WaitForChild("configs"):WaitForChild("WeaponDa
 local ShotPacket = require(Shared:WaitForChild("network"):WaitForChild("ShotPacket"))
 
 local TracerPool = require(script.Parent:WaitForChild("TracerPool"))
+local AudioController = require(script.Parent.Parent:WaitForChild("audio"):WaitForChild("AudioController"))
+local VFXController = require(script.Parent.Parent:WaitForChild("graphics"):WaitForChild("VFXController"))
+local CrosshairModule = require(script.Parent.Parent:WaitForChild("ui"):WaitForChild("CrosshairModule"))
 local ViewmodelController = require(script.Parent.Parent:WaitForChild("viewmodel"):WaitForChild("ViewmodelController"))
 
 local LOCAL_PLAYER = Players.LocalPlayer
 local DEFAULT_WEAPON_ID = "VORTEX_SMG"
+local OPTIMISTIC_HIT_DEDUP_WINDOW = 0.5
 
 type WeaponStats = {
 	Id: string?,
@@ -26,6 +30,10 @@ type WeaponStats = {
 	MaxRange: number?,
 	Range: number?,
 	RecoilKick: Vector3?,
+	RecoilKickPos: Vector3?,
+	RecoilKickRot: Vector3?,
+	FireSoundKey: string?,
+	ReloadSoundKey: string?,
 	IsOverdrive: boolean?,
 }
 
@@ -40,6 +48,10 @@ local FALLBACK_WEAPON_STATS: { [string]: WeaponStats } = {
 		Automatic = true,
 		MaxRange = 600,
 		RecoilKick = Vector3.new(0.04, 0.01, 0.18),
+		RecoilKickPos = Vector3.new(0, 0, 0.18),
+		RecoilKickRot = Vector3.new(0.04, 0.01, 0),
+		FireSoundKey = "PulseRifleFire",
+		ReloadSoundKey = "PulseRifleReload",
 		IsOverdrive = false,
 	},
 	HELIOS_RAIL = {
@@ -52,6 +64,10 @@ local FALLBACK_WEAPON_STATS: { [string]: WeaponStats } = {
 		Automatic = false,
 		MaxRange = 1200,
 		RecoilKick = Vector3.new(0.16, 0.03, 0.55),
+		RecoilKickPos = Vector3.new(0, 0.02, 0.55),
+		RecoilKickRot = Vector3.new(0.16, 0.03, 0),
+		FireSoundKey = "RailgunFire",
+		ReloadSoundKey = "PulseRifleReload",
 		IsOverdrive = true,
 	},
 }
@@ -70,6 +86,9 @@ local isTriggerHeld = false
 local lastFireTimestamp = 0
 local reloadStateToken = 0
 local fireWeaponRemote: Instance? = nil
+
+local pendingOptimisticHits = 0
+local lastOptimisticHitTime = 0
 
 local raycastParams = RaycastParams.new()
 raycastParams.FilterType = Enum.RaycastFilterType.Exclude
@@ -132,13 +151,6 @@ local function isWeaponAutomatic(weaponId: string, stats: WeaponStats): boolean
 	return weaponId == "VORTEX_SMG"
 end
 
-local function getNumericWeaponId(weaponId: string, stats: WeaponStats): number
-	if stats.WeaponId then
-		return stats.WeaponId
-	end
-	return if weaponId == "HELIOS_RAIL" then 2 else 1
-end
-
 local function fireWeaponListeners()
 	for i = 1, #WeaponController.OnWeaponFired do
 		local callback = WeaponController.OnWeaponFired[i]
@@ -155,6 +167,25 @@ local function fireHitListeners(isHeadshot: boolean)
 			callback(isHeadshot)
 		end
 	end
+end
+
+local function triggerHitmarkerFeedback(isHeadshot: boolean)
+	CrosshairModule.TriggerHitmarker(isHeadshot)
+	AudioController.PlayUISound(if isHeadshot then "HitmarkerHeadshot" else "HitmarkerBody")
+	fireHitListeners(isHeadshot)
+end
+
+local function handleServerHitConfirm(payload: any)
+	local isHeadshot = (typeof(payload) == "table" and payload.isHeadshot == true) or payload == true
+
+	local now = os.clock()
+	if pendingOptimisticHits > 0 and (now - lastOptimisticHitTime) <= OPTIMISTIC_HIT_DEDUP_WINDOW then
+		pendingOptimisticHits -= 1
+		return
+	end
+
+	pendingOptimisticHits = 0
+	triggerHitmarkerFeedback(isHeadshot)
 end
 
 local function evaluateHitResult(rayResult: RaycastResult?): (boolean, boolean)
@@ -187,49 +218,6 @@ local function evaluateHitResult(rayResult: RaycastResult?): (boolean, boolean)
 	return true, isHeadshot
 end
 
-local function encodeShotBuffer(
-	origin: Vector3,
-	direction: Vector3,
-	hitPosition: Vector3,
-	timestamp: number,
-	weaponId: string,
-	numericWeaponId: number
-): buffer
-	local encodeFn = (ShotPacket :: any).Encode
-	local arity = debug.info(encodeFn, "a")
-
-	if arity == 1 then
-		return encodeFn({
-			Origin = origin,
-			Direction = direction,
-			HitPosition = hitPosition,
-			Timestamp = timestamp,
-			ClientTimestamp = timestamp,
-			WeaponId = numericWeaponId,
-			WeaponName = weaponId,
-			origin = origin,
-			direction = direction,
-			hitPosition = hitPosition,
-			timestamp = timestamp,
-			clientTimestamp = timestamp,
-			weaponId = numericWeaponId,
-		})
-	end
-
-	local ok, encoded = pcall(encodeFn, origin, direction, timestamp, numericWeaponId)
-	if ok and type(encoded) == "buffer" then
-		return encoded
-	end
-
-	return encodeFn({
-		Origin = origin,
-		Direction = direction,
-		HitPosition = hitPosition,
-		Timestamp = timestamp,
-		WeaponId = numericWeaponId,
-	})
-end
-
 local function sendShotBuffer(packetBuffer: buffer)
 	local remote = fireWeaponRemote
 	if not remote then
@@ -259,6 +247,14 @@ local function startReload()
 	reloadStateToken += 1
 	local activeToken = reloadStateToken
 
+	local reloadRemote = ReplicatedStorage:FindFirstChild("ReloadWeaponEvent")
+	if reloadRemote and reloadRemote:IsA("RemoteEvent") then
+		reloadRemote:FireServer()
+	end
+
+	AudioController.PlayWeaponSound(stats.ReloadSoundKey or "PulseRifleReload")
+	ViewmodelController.PlayReloadAnimation(reloadDuration)
+
 	task.delay(reloadDuration, function()
 		if reloadStateToken ~= activeToken or not WeaponController.IsReloading then
 			return
@@ -270,6 +266,10 @@ local function startReload()
 end
 
 local function attemptFire()
+	if LOCAL_PLAYER and LOCAL_PLAYER:GetAttribute("InArena") ~= true then
+		return
+	end
+
 	if WeaponController.IsReloading then
 		return
 	end
@@ -312,39 +312,50 @@ local function attemptFire()
 	local rayResult = workspace:Raycast(rayOrigin, aimDirection * maxRange, raycastParams)
 	local endPos = if rayResult then rayResult.Position else (rayOrigin + aimDirection * maxRange)
 
+	AudioController.PlayWeaponSound(
+		stats.FireSoundKey or (if weaponId == "HELIOS_RAIL" then "RailgunFire" else "PulseRifleFire")
+	)
+
+	local muzzleAtt = ViewmodelController.GetMuzzleAttachment()
+	if muzzleAtt then
+		VFXController.EmitMuzzleFlash(muzzleAtt)
+	end
+
 	local muzzlePos = rayOrigin
 	if type((ViewmodelController :: any).GetMuzzleWorldPosition) == "function" then
 		local resolvedMuzzle = ViewmodelController.GetMuzzleWorldPosition()
 		if typeof(resolvedMuzzle) == "Vector3" then
 			muzzlePos = resolvedMuzzle
 		end
+	elseif muzzleAtt then
+		muzzlePos = muzzleAtt.WorldPosition
 	end
 
 	local isOverdrive = stats.IsOverdrive == true or weaponId == "HELIOS_RAIL"
 	TracerPool.SpawnTracer(muzzlePos, endPos, isOverdrive)
 
-	local recoilKick = stats.RecoilKick or Vector3.new(0.05, 0, 0.2)
-	if type((ViewmodelController :: any).ApplyRecoilImpulse) == "function" then
-		ViewmodelController.ApplyRecoilImpulse(recoilKick)
+	if rayResult then
+		VFXController.SpawnImpactSparks(rayResult.Position, rayResult.Normal)
 	end
 
+	local recoilKickPos = stats.RecoilKickPos or stats.RecoilKick or Vector3.new(0, 0, 0.2)
+	local recoilKickRot = stats.RecoilKickRot or Vector3.new(0.05, 0, 0)
+	ViewmodelController.ApplyRecoilImpulse(recoilKickPos, recoilKickRot)
+
 	local netTimestamp = workspace:GetServerTimeNow()
-	local numericWeaponId = getNumericWeaponId(weaponId, stats)
-	local packetBuffer = encodeShotBuffer(
-		rayOrigin,
-		aimDirection,
-		endPos,
-		netTimestamp,
-		weaponId,
-		numericWeaponId
-	)
+	local unitDir = aimDirection.Unit
+	local pitch = math.asin(math.clamp(unitDir.Y, -1, 1))
+	local yaw = math.atan2(-unitDir.X, -unitDir.Z)
+	local packetBuffer = ShotPacket.Encode(netTimestamp, rayOrigin, pitch, yaw)
 	sendShotBuffer(packetBuffer)
 
 	fireWeaponListeners()
 
 	local didHitTarget, isHeadshot = evaluateHitResult(rayResult)
 	if didHitTarget then
-		fireHitListeners(isHeadshot)
+		pendingOptimisticHits += 1
+		lastOptimisticHitTime = now
+		triggerHitmarkerFeedback(isHeadshot)
 	end
 
 	if WeaponController.CurrentAmmo <= 0 then
@@ -355,7 +366,10 @@ end
 function WeaponController.SwitchWeapon(weaponId: string)
 	if weaponId ~= "VORTEX_SMG" and weaponId ~= "HELIOS_RAIL" then
 		local dataTable = WeaponData :: any
-		if type(dataTable) ~= "table" or (not dataTable[weaponId] and not (dataTable.Weapons and dataTable.Weapons[weaponId])) then
+		if
+			type(dataTable) ~= "table"
+			or (not dataTable[weaponId] and not (dataTable.Weapons and dataTable.Weapons[weaponId]))
+		then
 			return
 		end
 	end
@@ -389,14 +403,40 @@ function WeaponController.Init()
 	TracerPool.Init()
 	fireWeaponRemote = ReplicatedStorage:WaitForChild("FireWeaponBuffer")
 
-	local hitConfirmRemote = ReplicatedStorage:FindFirstChild("HitConfirmed")
+	local hitConfirmRemote = ReplicatedStorage:FindFirstChild("HitConfirmEvent")
+		or ReplicatedStorage:FindFirstChild("HitConfirmed")
+		or ReplicatedStorage:WaitForChild("HitConfirmEvent")
+
 	if hitConfirmRemote and hitConfirmRemote:IsA("RemoteEvent") then
-		hitConfirmRemote.OnClientEvent:Connect(function(isHeadshot: boolean)
-			fireHitListeners(isHeadshot == true)
-		end)
+		hitConfirmRemote.OnClientEvent:Connect(handleServerHitConfirm)
 	end
 
-	WeaponController.SwitchWeapon(DEFAULT_WEAPON_ID)
+	local fallbackHitRemote = ReplicatedStorage:FindFirstChild("HitConfirmed")
+	if fallbackHitRemote and fallbackHitRemote ~= hitConfirmRemote and fallbackHitRemote:IsA("RemoteEvent") then
+		fallbackHitRemote.OnClientEvent:Connect(handleServerHitConfirm)
+	end
+
+	local initialWeapon = if LOCAL_PLAYER then LOCAL_PLAYER:GetAttribute("SelectedWeapon") else nil
+	if type(initialWeapon) == "string" and initialWeapon ~= "" then
+		WeaponController.SwitchWeapon(initialWeapon)
+	else
+		WeaponController.SwitchWeapon(DEFAULT_WEAPON_ID)
+	end
+
+	if LOCAL_PLAYER then
+		LOCAL_PLAYER:GetAttributeChangedSignal("SelectedWeapon"):Connect(function()
+			local selected = LOCAL_PLAYER:GetAttribute("SelectedWeapon")
+			if type(selected) == "string" and selected ~= "" then
+				WeaponController.SwitchWeapon(selected)
+			end
+		end)
+
+		LOCAL_PLAYER:GetAttributeChangedSignal("InArena"):Connect(function()
+			if LOCAL_PLAYER:GetAttribute("InArena") ~= true then
+				isTriggerHeld = false
+			end
+		end)
+	end
 
 	UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessedEvent: boolean)
 		if gameProcessedEvent then

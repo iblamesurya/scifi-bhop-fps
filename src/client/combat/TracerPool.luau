@@ -41,7 +41,7 @@ local function resolveBeamTemplate(): Beam?
 		return nil
 	end
 
-	local vfxFolder = graphicsFolder:FindFirstChild("VFX")
+	local vfxFolder = graphicsFolder:FindFirstChild("VFXPrefabs") or graphicsFolder:FindFirstChild("VFX")
 	if not vfxFolder then
 		return nil
 	end
