@@ -1,95 +1,63 @@
 --!strict
--- Slide impulse, low-friction decay, camera crouch offset
 
-local UserInputService = game:GetService("UserInputService")
-local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local MovementConfig = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared").configs.MovementConfig)
-local QuakeMath = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared").math.QuakeMath)
+local MovementConfig = require(ReplicatedStorage.Shared.configs.MovementConfig)
 
-local SlideController = {}
+local MIN_SLIDE_SPEED: number = MovementConfig.MinSlideSpeed or 22
+local SLIDE_BOOST_IMPULSE: number = MovementConfig.SlideBoostImpulse or 14
+local SLIDE_CAMERA_OFFSET_Y: number = MovementConfig.SlideCameraOffsetY or -2.2
+local CAMERA_LERP_SPEED: number = MovementConfig.SlideCameraLerpSpeed or 14
+local HARD_SPEED_CAP: number = MovementConfig.HardSpeedCap or 85
 
-local localPlayer: Player = Players.LocalPlayer
-local camera: Camera = workspace.CurrentCamera
+local SlideController = {
+	IsSliding = false,
+	CurrentCameraOffsetY = 0,
+}
 
-local isSliding: boolean = false
-local slideTimer: number = 0
-local cameraOffsetAlpha: number = 0
-
--- Public state
-SlideController.IsSliding = false
-SlideController.OnSlideStart = {} :: { () -> () }
-SlideController.OnSlideEnd = {} :: { () -> () }
-
-function SlideController.init(getIsGrounded: () -> boolean, getPlanarSpeed: () -> number): ()
-	UserInputService.InputBegan:Connect(function(input: InputObject, processed: boolean): ()
-		if processed then
-			return
-		end
-		if input.KeyCode == Enum.KeyCode.LeftControl or input.KeyCode == Enum.KeyCode.C then
-			if getIsGrounded() and getPlanarSpeed() > MovementConfig.MinSlideSpeed and not isSliding then
-				SlideController.beginSlide()
-			end
-		end
-	end)
+function SlideController.Init()
+	SlideController.IsSliding = false
+	SlideController.CurrentCameraOffsetY = 0
 end
 
-function SlideController.beginSlide(): ()
-	isSliding = true
-	slideTimer = MovementConfig.SlideDuration
+function SlideController.TryStartSlide(planarVelocity: Vector3, isGrounded: boolean): Vector3
+	local flatVelocity = Vector3.new(planarVelocity.X, 0, planarVelocity.Z)
+	local speed = flatVelocity.Magnitude
+
+	if not isGrounded or speed < MIN_SLIDE_SPEED then
+		return flatVelocity
+	end
+
 	SlideController.IsSliding = true
 
-	-- Apply slide boost impulse
-	local character: Model? = localPlayer.Character
-	if character then
-		local hrp: BasePart? = character:FindFirstChild("HumanoidRootPart") :: BasePart?
-		if hrp then
-			local lookDir: Vector3 = camera.CFrame.LookVector
-			local flatDir: Vector3 = Vector3.new(lookDir.X, 0, lookDir.Z).Unit
-			hrp.AssemblyLinearVelocity += flatDir * MovementConfig.SlideBoostImpulse
-		end
+	local boostDir = if speed > 1e-4 then flatVelocity.Unit else Vector3.zero
+	local boostedVelocity = flatVelocity + (boostDir * SLIDE_BOOST_IMPULSE)
+
+	if boostedVelocity.Magnitude > HARD_SPEED_CAP then
+		boostedVelocity = boostedVelocity.Unit * HARD_SPEED_CAP
 	end
 
-	for _, callback in SlideController.OnSlideStart do
-		task.spawn(callback)
-	end
+	return boostedVelocity
 end
 
-function SlideController.endSlide(): ()
-	isSliding = false
+function SlideController.StopSlide()
 	SlideController.IsSliding = false
-
-	for _, callback in SlideController.OnSlideEnd do
-		task.spawn(callback)
-	end
 end
 
-function SlideController.update(dt: number, getIsGrounded: () -> boolean, getPlanarSpeed: () -> number): number
-	if isSliding then
-		slideTimer -= dt
-
-		-- Apply slide friction (lower than ground)
-		local character: Model? = localPlayer.Character
-		if character then
-			local hrp: BasePart? = character:FindFirstChild("HumanoidRootPart") :: BasePart?
-			if hrp then
-				local vel: Vector3 = hrp.AssemblyLinearVelocity
-				vel = QuakeMath.applyFriction(vel, MovementConfig.SlideFriction, dt)
-				hrp.AssemblyLinearVelocity = Vector3.new(vel.X, hrp.AssemblyLinearVelocity.Y, vel.Z)
-			end
-		end
-
-		-- End conditions
-		if slideTimer <= 0 or not getIsGrounded() or getPlanarSpeed() < 8 then
-			SlideController.endSlide()
+function SlideController.Step(dt: number, isGrounded: boolean, planarSpeed: number)
+	if SlideController.IsSliding then
+		if planarSpeed < (MIN_SLIDE_SPEED * 0.6) then
+			SlideController.IsSliding = false
 		end
 	end
 
-	-- Lerp camera crouch offset
-	local targetAlpha: number = if isSliding then 1 else 0
-	cameraOffsetAlpha += (targetAlpha - cameraOffsetAlpha) * math.min(dt * 12, 1)
+	local targetOffsetY = if SlideController.IsSliding and isGrounded
+			or SlideController.IsSliding
+		then SLIDE_CAMERA_OFFSET_Y
+		else 0
 
-	return MovementConfig.CrouchCameraOffset * cameraOffsetAlpha
+	local alpha = math.clamp(1 - math.exp(-CAMERA_LERP_SPEED * dt), 0, 1)
+	SlideController.CurrentCameraOffsetY += (targetOffsetY - SlideController.CurrentCameraOffsetY) * alpha
 end
 
 return SlideController

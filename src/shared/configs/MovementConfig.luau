@@ -1,38 +1,95 @@
 --!strict
--- Read-only physics constants for Quake-style bunny-hop movement
+--[[
+	MovementConfig.luau
+	Read-only movement, bunny-hop, air-strafe, slide, and camera physics constants.
+]]
 
 export type MovementConfigType = {
+	-- Ground Movement
+	GroundWalkSpeed: number,
+	GroundSprintSpeed: number,
+	GroundAcceleration: number,
 	GroundFriction: number,
-	AirAccelerate: number,
-	MaxAirWishSpeed: number,
-	GroundAccelerate: number,
-	MaxGroundSpeed: number,
-	HardSpeedCap: number,
+	StopSpeed: number,
+
+	-- Air Movement & Bunny-Hop
+	AirWishSpeed: number,
+	AirAcceleration: number,
+	MaxPlanarSpeed: number,
 	JumpVelocity: number,
-	GroundRayLength: number,
 	Gravity: number,
-	MinSlideSpeed: number,
-	SlideBoostImpulse: number,
+	AutoBhopEnabled: boolean,
+	JumpBufferWindow: number,
+	CoyoteTimeWindow: number,
+
+	-- Sliding
+	SlideMinEntrySpeed: number,
+	SlideImpulseBoost: number,
 	SlideFriction: number,
+	SlideSteerAcceleration: number,
 	SlideDuration: number,
-	CrouchCameraOffset: number,
+	SlideCooldown: number,
+	SlideCameraDropStuds: number,
+	SlideColliderHeightScale: number,
+
+	-- Ground Raycast & Collider
+	StandingHipHeight: number,
+	SlideHipHeight: number,
+	GroundRayDistance: number,
+	MaxSlopeAngle: number,
+
+	-- Camera & Dynamic FOV
+	BaseFOV: number,
+	MaxSpeedFOV: number,
+	FOVSpeedThreshold: number,
+	FOVMaxSpeedReference: number,
+	FOVLerpSpeed: number,
+	StrafeTiltMaxDegrees: number,
+	SlideTiltDegrees: number,
 }
 
-local MovementConfig: MovementConfigType = table.freeze({
-	GroundFriction = 6.0,
-	AirAccelerate = 120,
-	MaxAirWishSpeed = 6.5,
-	GroundAccelerate = 10,
-	MaxGroundSpeed = 18,
-	HardSpeedCap = 85,
-	JumpVelocity = 42,
-	GroundRayLength = 3.4,
-	Gravity = 196.2,
-	MinSlideSpeed = 26,
-	SlideBoostImpulse = 16,
-	SlideFriction = 1.2,
-	SlideDuration = 1.2,
-	CrouchCameraOffset = -2.5,
-})
+local MovementConfig: MovementConfigType = {
+	-- Ground Movement
+	GroundWalkSpeed = 24,
+	GroundSprintSpeed = 30,
+	GroundAcceleration = 14,
+	GroundFriction = 6,
+	StopSpeed = 10,
 
-return MovementConfig
+	-- Air Movement & Bunny-Hop
+	AirWishSpeed = 16,
+	AirAcceleration = 120,
+	MaxPlanarSpeed = 95,
+	JumpVelocity = 52,
+	Gravity = 150,
+	AutoBhopEnabled = true,
+	JumpBufferWindow = 0.12,
+	CoyoteTimeWindow = 0.08,
+
+	-- Sliding
+	SlideMinEntrySpeed = 22,
+	SlideImpulseBoost = 18,
+	SlideFriction = 1.6,
+	SlideSteerAcceleration = 35,
+	SlideDuration = 1.15,
+	SlideCooldown = 0.45,
+	SlideCameraDropStuds = 2.2,
+	SlideColliderHeightScale = 0.5,
+
+	-- Ground Raycast & Collider
+	StandingHipHeight = 2.0,
+	SlideHipHeight = 0.8,
+	GroundRayDistance = 3.4,
+	MaxSlopeAngle = 50,
+
+	-- Camera & Dynamic FOV
+	BaseFOV = 90,
+	MaxSpeedFOV = 112,
+	FOVSpeedThreshold = 28,
+	FOVMaxSpeedReference = 85,
+	FOVLerpSpeed = 12,
+	StrafeTiltMaxDegrees = 3.5,
+	SlideTiltDegrees = 6.0,
+}
+
+return table.freeze(MovementConfig)

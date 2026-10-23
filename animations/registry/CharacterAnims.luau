@@ -1,77 +1,30 @@
 --!strict
--- 3P R6 character animation data: locomotion, air-strafe, slide tracks
 
-local ViewmodelAnims = require(script.Parent.ViewmodelAnims)
-type AnimData = ViewmodelAnims.AnimData
+export type AnimEntry = {
+	Id: string,
+	Priority: Enum.AnimationPriority,
+	FadeTime: number,
+	Speed: number,
+}
 
-export type CharacterAnimsType = { [string]: AnimData }
+export type CharacterAnimRegistry = {
+	SlideLoop: AnimEntry,
+	AirStrafeTuck: AnimEntry,
+	[string]: AnimEntry,
+}
 
-local CharacterAnims: CharacterAnimsType = table.freeze({
-	Idle = table.freeze({
-		Id = "rbxassetid://0",
-		Priority = Enum.AnimationPriority.Core,
-		FadeTime = 0.2,
-		Looped = true,
-	}),
-	Walk = table.freeze({
-		Id = "rbxassetid://0",
-		Priority = Enum.AnimationPriority.Movement,
-		FadeTime = 0.15,
-		Looped = true,
-	}),
-	Sprint = table.freeze({
-		Id = "rbxassetid://0",
-		Priority = Enum.AnimationPriority.Movement,
-		FadeTime = 0.15,
-		Looped = true,
-	}),
-	Jump = table.freeze({
-		Id = "rbxassetid://0",
-		Priority = Enum.AnimationPriority.Action,
-		FadeTime = 0.1,
-		Looped = false,
-	}),
-	Fall = table.freeze({
-		Id = "rbxassetid://0",
-		Priority = Enum.AnimationPriority.Action,
-		FadeTime = 0.2,
-		Looped = true,
-	}),
-	Land = table.freeze({
-		Id = "rbxassetid://0",
-		Priority = Enum.AnimationPriority.Action,
-		FadeTime = 0.05,
-		Looped = false,
-	}),
-	SlideStart = table.freeze({
-		Id = "rbxassetid://0",
-		Priority = Enum.AnimationPriority.Action2,
-		FadeTime = 0.1,
-		Looped = false,
-	}),
+local CharacterAnims: CharacterAnimRegistry = table.freeze({
 	SlideLoop = table.freeze({
 		Id = "rbxassetid://0",
-		Priority = Enum.AnimationPriority.Action2,
-		FadeTime = 0.1,
-		Looped = true,
+		Priority = Enum.AnimationPriority.Movement,
+		FadeTime = 0.12,
+		Speed = 1.0,
 	}),
-	SlideEnd = table.freeze({
+	AirStrafeTuck = table.freeze({
 		Id = "rbxassetid://0",
-		Priority = Enum.AnimationPriority.Action2,
+		Priority = Enum.AnimationPriority.Movement,
 		FadeTime = 0.15,
-		Looped = false,
-	}),
-	AirStrafeLeft = table.freeze({
-		Id = "rbxassetid://0",
-		Priority = Enum.AnimationPriority.Action,
-		FadeTime = 0.15,
-		Looped = true,
-	}),
-	AirStrafeRight = table.freeze({
-		Id = "rbxassetid://0",
-		Priority = Enum.AnimationPriority.Action,
-		FadeTime = 0.15,
-		Looped = true,
+		Speed = 1.0,
 	}),
 })
 

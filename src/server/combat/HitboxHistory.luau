@@ -1,125 +1,146 @@
 --!strict
--- 60Hz 1-second circular buffer of player part CFrames for lag compensation
-
+local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
-
-local BUFFER_SIZE: number = 60
-
-export type PlayerCFrameMap = { [string]: CFrame }
-export type Snapshot = {
-	Timestamp: number,
-	PlayerCFrames: { [Player]: PlayerCFrameMap },
-}
 
 local HitboxHistory = {}
 
-local ringBuffer: { Snapshot } = table.create(BUFFER_SIZE)
-local writeIndex: number = 1
-local snapshotCount: number = 0
+type Snapshot = {
+	time: number,
+	parts: { [BasePart]: { cf: CFrame, anchored: boolean } },
+}
 
--- Temporary storage for restoring CFrames after rewind
-local restoreCache: { [Player]: PlayerCFrameMap } = {}
+local playerHistories: { [Player]: { Snapshot } } = {}
+local MAX_HISTORY_DURATION = 1.0 -- 1 second
+local MAX_REWIND = 0.45 -- 450ms max rewind
 
-function HitboxHistory.recordSnapshot(): ()
-	local snapshot: Snapshot = {
-		Timestamp = workspace:GetServerTimeNow(),
-		PlayerCFrames = {},
-	}
+function HitboxHistory.Init()
+	RunService.Heartbeat:Connect(function(dt)
+		local now = workspace:GetServerTimeNow()
 
-	for _, player: Player in Players:GetPlayers() do
-		local character: Model? = player.Character
-		if not character then
-			continue
-		end
-		local cframes: PlayerCFrameMap = {}
-		for _, part: Instance in character:GetChildren() do
-			if part:IsA("BasePart") then
-				cframes[part.Name] = part.CFrame
+		for _, player in ipairs(Players:GetPlayers()) do
+			local character = player.Character
+			if character and character:FindFirstChild("HumanoidRootPart") then
+				if not playerHistories[player] then
+					playerHistories[player] = {}
+				end
+
+				local partsMap = {}
+				for _, desc in ipairs(character:GetDescendants()) do
+					if desc:IsA("BasePart") then
+						partsMap[desc] = {
+							cf = desc.CFrame,
+							anchored = desc.Anchored,
+						}
+					end
+				end
+
+				local history = playerHistories[player]
+				table.insert(history, {
+					time = now,
+					parts = partsMap,
+				})
+
+				-- Prune snapshots older than 1.0 second
+				while #history > 0 and (now - history[1].time) > MAX_HISTORY_DURATION do
+					table.remove(history, 1)
+				end
+			else
+				playerHistories[player] = nil
 			end
 		end
-		snapshot.PlayerCFrames[player] = cframes
-	end
+	end)
 
-	ringBuffer[writeIndex] = snapshot
-	writeIndex = (writeIndex % BUFFER_SIZE) + 1
-	if snapshotCount < BUFFER_SIZE then
-		snapshotCount += 1
-	end
+	Players.PlayerRemoving:Connect(function(player)
+		playerHistories[player] = nil
+	end)
 end
 
-function HitboxHistory.getSnapshot(timestamp: number): Snapshot?
-	if snapshotCount == 0 then
-		return nil
-	end
+function HitboxHistory.RewindToTimestamp(shooter: Player, targetTimestamp: number): () -> ()
+	local now = workspace:GetServerTimeNow()
+	local minAllowedTime = now - MAX_REWIND
+	targetTimestamp = math.clamp(targetTimestamp, minAllowedTime, now)
 
-	local bestSnapshot: Snapshot? = nil
-	local bestDelta: number = math.huge
+	local originalStates: { [BasePart]: { cf: CFrame, anchored: boolean } } = {}
 
-	for i = 1, snapshotCount do
-		local snap: Snapshot = ringBuffer[i]
-		local delta: number = math.abs(snap.Timestamp - timestamp)
-		if delta < bestDelta then
-			bestDelta = delta
-			bestSnapshot = snap
-		end
-	end
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= shooter then
+			local character = player.Character
+			if character then
+				local history = playerHistories[player]
+				if history and #history > 0 then
+					local s1, s2
+					for i = 1, #history - 1 do
+						if history[i].time <= targetTimestamp and history[i + 1].time >= targetTimestamp then
+							s1 = history[i]
+							s2 = history[i + 1]
+							break
+						end
+					end
 
-	return bestSnapshot
-end
+					local targetPartsState = nil
+					if s1 and s2 then
+						local alpha = 0
+						if s2.time > s1.time then
+							alpha = (targetTimestamp - s1.time) / (s2.time - s1.time)
+						end
+						targetPartsState = {}
+						for part, data1 in pairs(s1.parts) do
+							local data2 = s2.parts[part]
+							if data2 and part.Parent then
+								originalStates[part] = { cf = part.CFrame, anchored = part.Anchored }
+								targetPartsState[part] = {
+									cf = data1.cf:Lerp(data2.cf, alpha),
+									anchored = true,
+								}
+							end
+						end
+					else
+						-- Fallback to nearest snapshot
+						local nearest = history[1]
+						local minDiff = math.abs(nearest.time - targetTimestamp)
+						for i = 2, #history do
+							local diff = math.abs(history[i].time - targetTimestamp)
+							if diff < minDiff then
+								minDiff = diff
+								nearest = history[i]
+							end
+						end
+						if nearest then
+							targetPartsState = nearest.parts
+						end
+					end
 
-function HitboxHistory.rewindPlayer(player: Player, snapshot: Snapshot): ()
-	local character: Model? = player.Character
-	if not character then
-		return
-	end
-
-	local historicalCFrames: PlayerCFrameMap? = snapshot.PlayerCFrames[player]
-	if not historicalCFrames then
-		return
-	end
-
-	-- Save current CFrames for restoration
-	local currentCFrames: PlayerCFrameMap = {}
-	for _, part: Instance in character:GetChildren() do
-		if part:IsA("BasePart") then
-			currentCFrames[part.Name] = part.CFrame
-		end
-	end
-	restoreCache[player] = currentCFrames
-
-	-- Apply historical CFrames
-	for _, part: Instance in character:GetChildren() do
-		if part:IsA("BasePart") then
-			local historicalCF: CFrame? = historicalCFrames[part.Name]
-			if historicalCF then
-				(part :: BasePart).CFrame = historicalCF
-			end
-		end
-	end
-end
-
-function HitboxHistory.restorePlayer(player: Player): ()
-	local character: Model? = player.Character
-	if not character then
-		restoreCache[player] = nil
-		return
-	end
-
-	local savedCFrames: PlayerCFrameMap? = restoreCache[player]
-	if not savedCFrames then
-		return
-	end
-
-	for _, part: Instance in character:GetChildren() do
-		if part:IsA("BasePart") then
-			local savedCF: CFrame? = savedCFrames[part.Name]
-			if savedCF then
-				(part :: BasePart).CFrame = savedCF
+					if targetPartsState then
+						for part, state in pairs(targetPartsState) do
+							if part.Parent then
+								if not originalStates[part] then
+									originalStates[part] = { cf = part.CFrame, anchored = part.Anchored }
+								end
+								part.CFrame = state.cf
+								part.Anchored = state.anchored
+							end
+						end
+					end
+				end
 			end
 		end
 	end
 
-	restoreCache[player] = nil
+	local restored = false
+	local function restoreFn()
+		if restored then
+			return
+		end
+		restored = true
+		for part, state in pairs(originalStates) do
+			if part.Parent then
+				part.CFrame = state.cf
+				part.Anchored = state.anchored
+			end
+		end
+	end
+
+	return restoreFn
 end
 
 return HitboxHistory

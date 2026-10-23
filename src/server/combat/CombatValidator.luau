@@ -1,124 +1,178 @@
 --!strict
--- Unpacks 28B shot buffer, rewinds hitboxes, validates, and applies damage
-
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
 
-local ShotPacket = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared").network.ShotPacket)
-local WeaponData = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared").configs.WeaponData)
 local HitboxHistory = require(script.Parent.HitboxHistory)
-local LoadoutService = require(script.Parent.LoadoutService)
+local ShotPacket = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("network"):WaitForChild("ShotPacket"))
+local WeaponData = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("configs"):WaitForChild("WeaponData"))
 
 local CombatValidator = {}
 
-local lastFireTime: { [Player]: number } = {}
-local MAX_ORIGIN_TOLERANCE: number = 14
-local MAX_REWIND_TIME: number = 0.45
+local fireEvent: RemoteEvent
+local hitConfirmEvent: RemoteEvent
 
-local rayParams: RaycastParams = RaycastParams.new()
-rayParams.FilterType = Enum.RaycastFilterType.Exclude
+type WeaponState = {
+	ammo: number,
+	lastShotTime: number,
+	reloadEndTime: number,
+}
 
-function CombatValidator.init(shotEvent: RemoteEvent): ()
-	shotEvent.OnServerEvent:Connect(function(player: Player, packet: any): ()
-		CombatValidator.processShot(player, packet)
-	end)
+type PlayerCombatState = {
+	weapons: { [string]: WeaponState },
+}
 
-	Players.PlayerRemoving:Connect(function(player: Player): ()
-		lastFireTime[player] = nil
-	end)
-end
+local playerStates: { [Player]: PlayerCombatState } = {}
 
-function CombatValidator.processShot(player: Player, packet: any): ()
-	-- 1) Verify buffer type and length
-	if typeof(packet) ~= "buffer" or buffer.len(packet) ~= 28 then
-		return
+function CombatValidator.Init()
+	fireEvent = ReplicatedStorage:FindFirstChild("FireWeaponBuffer") :: RemoteEvent
+	if not fireEvent then
+		fireEvent = Instance.new("RemoteEvent")
+		fireEvent.Name = "FireWeaponBuffer"
+		fireEvent.Parent = ReplicatedStorage
 	end
 
-	local character: Model? = player.Character
-	if not character then
-		return
+	hitConfirmEvent = ReplicatedStorage:FindFirstChild("HitConfirmEvent") :: RemoteEvent
+	if not hitConfirmEvent then
+		hitConfirmEvent = Instance.new("RemoteEvent")
+		hitConfirmEvent.Name = "HitConfirmEvent"
+		hitConfirmEvent.Parent = ReplicatedStorage
 	end
 
-	local head: BasePart? = character:FindFirstChild("Head") :: BasePart?
-	if not head then
-		return
-	end
-
-	-- Decode packet
-	local shotData = ShotPacket.read(packet)
-	local serverNow: number = workspace:GetServerTimeNow()
-
-	-- Get weapon stats
-	local weaponId: string = LoadoutService.getCurrentWeapon(player)
-	local stats = WeaponData[weaponId]
-	if not stats then
-		return
-	end
-
-	-- 2) Rate-of-fire check
-	local minInterval: number = (60 / stats.FireRateRPM) * 0.88
-	local lastTime: number? = lastFireTime[player]
-	if lastTime and (serverNow - lastTime) < minInterval then
-		return
-	end
-	lastFireTime[player] = serverNow
-
-	-- 3) Consume ammo server-side
-	if not LoadoutService.consumeAmmo(player) then
-		return
-	end
-
-	-- 4) Origin distance validation
-	local originDist: number = (shotData.Origin - head.Position).Magnitude
-	if originDist > MAX_ORIGIN_TOLERANCE then
-		return
-	end
-
-	-- 5) Clamp rewind time
-	local rewindTime: number = math.clamp(shotData.Timestamp, serverNow - MAX_REWIND_TIME, serverNow)
-
-	-- 6) Get historical snapshot
-	local snapshot = HitboxHistory.getSnapshot(rewindTime)
-	if not snapshot then
-		return
-	end
-
-	-- Build ray direction from pitch/yaw
-	local direction: Vector3 = CFrame.fromOrientation(shotData.Pitch, shotData.Yaw, 0).LookVector * stats.MaxRange
-
-	-- 7) Rewind all enemy hitboxes, raycast, restore
-	rayParams.FilterDescendantsInstances = { character }
-
-	-- Rewind enemies
-	for _, otherPlayer: Player in Players:GetPlayers() do
-		if otherPlayer ~= player and otherPlayer.Character then
-			HitboxHistory.rewindPlayer(otherPlayer, snapshot)
-		end
-	end
-
-	-- Perform raycast
-	local result: RaycastResult? = workspace:Raycast(shotData.Origin, direction, rayParams)
-
-	-- Restore enemies
-	for _, otherPlayer: Player in Players:GetPlayers() do
-		if otherPlayer ~= player then
-			HitboxHistory.restorePlayer(otherPlayer)
-		end
-	end
-
-	-- 8) Apply damage if hit
-	if result and result.Instance then
-		local hitCharacter: Model? = result.Instance:FindFirstAncestorOfClass("Model")
-		if hitCharacter then
-			local humanoid: Humanoid? = hitCharacter:FindFirstChildOfClass("Humanoid")
-			if humanoid and humanoid.Health > 0 then
-				local damage: number = stats.Damage * stats.PelletCount
-				if result.Instance.Name == "Head" then
-					damage *= stats.HeadshotMultiplier
-				end
-				humanoid:TakeDamage(damage)
+	Players.PlayerAdded:Connect(function(player)
+		local weaponsState = {}
+		for weaponName, data in pairs(WeaponData) do
+			if type(data) == "table" and data.MagazineSize then
+				weaponsState[weaponName] = {
+					ammo = data.MagazineSize,
+					lastShotTime = 0,
+					reloadEndTime = 0,
+				}
 			end
 		end
-	end
+		playerStates[player] = {
+			weapons = weaponsState,
+		}
+	end)
+
+	Players.PlayerRemoving:Connect(function(player)
+		playerStates[player] = nil
+	end)
+
+	fireEvent.OnServerEvent:Connect(function(shooter: Player, payload: any)
+		if not payload or typeof(payload) ~= "buffer" then
+			return
+		end
+
+		local success, packet = pcall(function()
+			return ShotPacket.Decode(payload)
+		end)
+
+		if not success or not packet then
+			return
+		end
+
+		local char = shooter.Character
+		if not char then
+			return
+		end
+		local head = char:FindFirstChild("Head")
+		if not head or not head:IsA("BasePart") then
+			return
+		end
+
+		-- Verify origin is within 14 studs of shooterHead.Position
+		local origin = packet.origin or packet.Origin
+		if not origin then
+			return
+		end
+		if (origin - head.Position).Magnitude > 14 then
+			return
+		end
+
+		local weaponName = packet.weaponName or packet.WeaponName or "AssaultRifle"
+		local weaponConfig = WeaponData[weaponName]
+		if not weaponConfig then
+			return
+		end
+
+		local pState = playerStates[shooter]
+		if not pState then
+			return
+		end
+		local wState = pState.weapons[weaponName]
+		if not wState then
+			return
+		end
+
+		local now = Workspace:GetServerTimeNow()
+
+		-- Check reload status
+		if now < wState.reloadEndTime then
+			return
+		end
+
+		-- Check RPM interval
+		local rpm = weaponConfig.RPM or 600
+		local minInterval = 60 / rpm
+		if (now - wState.lastShotTime) < (minInterval * 0.8) then
+			return
+		end
+
+		-- Check ammo
+		if wState.ammo <= 0 then
+			return
+		end
+
+		wState.ammo -= 1
+		wState.lastShotTime = now
+
+		-- Rewind hitboxes to target timestamp
+		local targetTimestamp = packet.timestamp or packet.Timestamp or now
+		local restoreFn = HitboxHistory.RewindToTimestamp(shooter, targetTimestamp)
+
+		-- Execute server raycast
+		local direction = packet.direction or packet.Direction
+		local range = weaponConfig.Range or 10000
+		if not direction then
+			restoreFn()
+			return
+		end
+
+		local raycastParams = RaycastParams.new()
+		raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+		raycastParams.FilterDescendantsInstances = { char }
+		raycastParams.IgnoreWater = true
+
+		local rayResult = Workspace:Raycast(origin, direction.Unit * range, raycastParams)
+
+		-- Restore hitboxes immediately
+		restoreFn()
+
+		-- Apply damage and confirm hit
+		if rayResult and rayResult.Instance then
+			local hitPart = rayResult.Instance
+			local hitModel = hitPart:FindFirstAncestorOfClass("Model")
+			if hitModel then
+				local humanoid = hitModel:FindFirstChildOfClass("Humanoid")
+				if humanoid and humanoid.Health > 0 then
+					local damage = weaponConfig.Damage or 25
+					if hitPart.Name == "Head" then
+						damage *= (weaponConfig.HeadshotMultiplier or 2.0)
+					end
+
+					humanoid:TakeDamage(damage)
+
+					hitConfirmEvent:FireClient(shooter, {
+						hitPosition = rayResult.Position,
+						hitPart = hitPart,
+						isHeadshot = (hitPart.Name == "Head"),
+						damage = damage,
+					})
+				end
+			end
+		end
+	end)
 end
 
 return CombatValidator

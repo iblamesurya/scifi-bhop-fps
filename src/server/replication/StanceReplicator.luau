@@ -1,39 +1,43 @@
 --!strict
--- UnreliableRemoteEvent buffer sync for 3P look pitch and slide state
-
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 
 local StanceReplicator = {}
 
-local STANCE_PACKET_SIZE: number = 5
-local MAX_PACKETS_PER_SECOND: number = 60
-local lastPacketTime: { [Player]: number } = {}
+local stanceSyncEvent: UnreliableRemoteEvent
 
-function StanceReplicator.init(stanceEvent: UnreliableRemoteEvent): ()
-	stanceEvent.OnServerEvent:Connect(function(player: Player, packet: any): ()
-		-- Validate buffer
-		if typeof(packet) ~= "buffer" or buffer.len(packet) ~= STANCE_PACKET_SIZE then
+function StanceReplicator.Init()
+	stanceSyncEvent = ReplicatedStorage:FindFirstChild("StanceSyncBuffer") :: UnreliableRemoteEvent
+	if not stanceSyncEvent then
+		stanceSyncEvent = Instance.new("UnreliableRemoteEvent")
+		stanceSyncEvent.Name = "StanceSyncBuffer"
+		stanceSyncEvent.Parent = ReplicatedStorage
+	end
+
+	stanceSyncEvent.OnServerEvent:Connect(function(sender: Player, packetBuffer: buffer)
+		if typeof(packetBuffer) ~= "buffer" then
 			return
 		end
 
-		-- Rate limit: max 60 packets/sec per player
-		local now: number = workspace:GetServerTimeNow()
-		local lastTime: number? = lastPacketTime[player]
-		if lastTime and (now - lastTime) < (1 / MAX_PACKETS_PER_SECOND) then
+		if buffer.len(packetBuffer) < 5 then
 			return
 		end
-		lastPacketTime[player] = now
 
-		-- Broadcast to all other players
-		for _, otherPlayer: Player in Players:GetPlayers() do
-			if otherPlayer ~= player then
-				stanceEvent:FireClient(otherPlayer, player, packet)
+		local success = pcall(function()
+			_ = buffer.readF32(packetBuffer, 0)
+			_ = buffer.readU8(packetBuffer, 4)
+		end)
+
+		if not success then
+			return
+		end
+
+		-- Broadcast stance buffer to all other clients
+		for _, player in ipairs(Players:GetPlayers()) do
+			if player ~= sender then
+				stanceSyncEvent:FireClient(player, sender, packetBuffer)
 			end
 		end
-	end)
-
-	Players.PlayerRemoving:Connect(function(player: Player): ()
-		lastPacketTime[player] = nil
 	end)
 end
 

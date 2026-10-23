@@ -1,79 +1,77 @@
 --!strict
--- 1P weapon animation data: idle, equip, fire, reload, inspect tracks per weapon
 
-export type AnimData = {
+export type AnimEntry = {
 	Id: string,
 	Priority: Enum.AnimationPriority,
 	FadeTime: number,
-	Looped: boolean,
+	Speed: number,
 }
 
-export type WeaponAnims = { [string]: AnimData }
-export type ViewmodelAnimsType = { [string]: WeaponAnims }
+export type WeaponAnimSet = {
+	Idle: AnimEntry,
+	Equip: AnimEntry,
+	Reload: AnimEntry,
+	Fire: AnimEntry,
+}
 
-local ViewmodelAnims: ViewmodelAnimsType = table.freeze({
-	pulse_rifle = table.freeze({
+export type ViewmodelAnimRegistry = {
+	VORTEX_SMG: WeaponAnimSet,
+	HELIOS_RAIL: WeaponAnimSet,
+	[string]: WeaponAnimSet,
+}
+
+local ViewmodelAnims: ViewmodelAnimRegistry = table.freeze({
+	VORTEX_SMG = table.freeze({
 		Idle = table.freeze({
 			Id = "rbxassetid://0",
-			Priority = Enum.AnimationPriority.Core,
-			FadeTime = 0.2,
-			Looped = true,
+			Priority = Enum.AnimationPriority.Idle,
+			FadeTime = 0.15,
+			Speed = 1.0,
 		}),
 		Equip = table.freeze({
 			Id = "rbxassetid://0",
 			Priority = Enum.AnimationPriority.Action,
-			FadeTime = 0.15,
-			Looped = false,
-		}),
-		Fire = table.freeze({
-			Id = "rbxassetid://0",
-			Priority = Enum.AnimationPriority.Action,
-			FadeTime = 0.05,
-			Looped = false,
+			FadeTime = 0.08,
+			Speed = 1.25,
 		}),
 		Reload = table.freeze({
 			Id = "rbxassetid://0",
-			Priority = Enum.AnimationPriority.Action4,
-			FadeTime = 0.1,
-			Looped = false,
-		}),
-		Inspect = table.freeze({
-			Id = "rbxassetid://0",
 			Priority = Enum.AnimationPriority.Action2,
-			FadeTime = 0.2,
-			Looped = false,
+			FadeTime = 0.12,
+			Speed = 1.0,
+		}),
+		Fire = table.freeze({
+			Id = "rbxassetid://0",
+			Priority = Enum.AnimationPriority.Action3,
+			FadeTime = 0.03,
+			Speed = 1.35,
 		}),
 	}),
-	scatter_blaster = table.freeze({
+
+	HELIOS_RAIL = table.freeze({
 		Idle = table.freeze({
 			Id = "rbxassetid://0",
-			Priority = Enum.AnimationPriority.Core,
-			FadeTime = 0.2,
-			Looped = true,
+			Priority = Enum.AnimationPriority.Idle,
+			FadeTime = 0.18,
+			Speed = 0.9,
 		}),
 		Equip = table.freeze({
 			Id = "rbxassetid://0",
 			Priority = Enum.AnimationPriority.Action,
-			FadeTime = 0.15,
-			Looped = false,
-		}),
-		Fire = table.freeze({
-			Id = "rbxassetid://0",
-			Priority = Enum.AnimationPriority.Action,
-			FadeTime = 0.05,
-			Looped = false,
+			FadeTime = 0.12,
+			Speed = 0.95,
 		}),
 		Reload = table.freeze({
 			Id = "rbxassetid://0",
-			Priority = Enum.AnimationPriority.Action4,
-			FadeTime = 0.1,
-			Looped = false,
-		}),
-		Inspect = table.freeze({
-			Id = "rbxassetid://0",
 			Priority = Enum.AnimationPriority.Action2,
-			FadeTime = 0.2,
-			Looped = false,
+			FadeTime = 0.15,
+			Speed = 0.85,
+		}),
+		Fire = table.freeze({
+			Id = "rbxassetid://0",
+			Priority = Enum.AnimationPriority.Action3,
+			FadeTime = 0.04,
+			Speed = 1.0,
 		}),
 	}),
 })

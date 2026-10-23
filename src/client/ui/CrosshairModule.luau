@@ -1,99 +1,232 @@
 --!strict
--- Velocity-reactive dynamic crosshair reticle
+--[[
+	CrosshairModule.luau
+	Minimalist 4-bracket + center dot velocity-reactive sci-fi reticle.
+	Dynamically expands with MovementController.CurrentPlanarSpeed, tightens during
+	ViewmodelController.IsADS(), and flashes Neon Cyan (body) or Neon Orange/Red (headshot).
+]]
 
-local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local clientRoot = script.Parent.Parent
+local MovementController = require(clientRoot:WaitForChild("movement"):WaitForChild("MovementController")) :: any
+local ViewmodelController = require(clientRoot:WaitForChild("viewmodel"):WaitForChild("ViewmodelController")) :: any
 
 local CrosshairModule = {}
 
-local NEON_CYAN: Color3 = Color3.fromHex("00F0FF")
-local OVERDRIVE_ORANGE: Color3 = Color3.fromHex("FF6E00")
-local OVERDRIVE_THRESHOLD: number = 45
+-- Visual & Telemetry Constants
+local BASE_GAP_PX = 8
+local ADS_GAP_MULTIPLIER = 0.42
+local SPEED_TO_GAP_FACTOR = 0.35
+local MAX_SPEED_GAP_ADDITION = 28
+local GAP_LERP_SPEED = 18
 
-local LINE_LENGTH: number = 12
-local LINE_THICKNESS: number = 2
-local BASE_GAP: number = 6
-local MAX_GAP: number = 28
-local GAP_SPEED_SCALE: number = 0.3
+local BRACKET_LENGTH = 8
+local BRACKET_THICKNESS = 2
+local HIT_FLASH_DURATION = 0.18
 
-local container: Frame? = nil
-local lines: { Frame } = {}
+local COLOR_DEFAULT = Color3.fromRGB(225, 248, 255)
+local COLOR_ADS = Color3.fromRGB(0, 240, 255)
+local COLOR_HIT_BODY = Color3.fromRGB(0, 240, 255) -- #00F0FF Neon Cyan
+local COLOR_HIT_HEAD = Color3.fromRGB(255, 78, 0) -- #FF4E00 Neon Orange/Red
+local COLOR_STROKE = Color3.fromRGB(10, 14, 20)
 
-function CrosshairModule.init(): ()
-	local player: Player = Players.LocalPlayer
-	local gui: ScreenGui = Instance.new("ScreenGui")
-	gui.Name = "CrosshairGui"
-	gui.ResetOnSpawn = false
-	gui.IgnoreGuiInset = true
-	gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-	gui.Parent = player.PlayerGui
+-- Internal State
+local isInitialized = false
+local rootFrame: Frame? = nil
+local centerDot: Frame? = nil
+local topBracket: Frame? = nil
+local bottomBracket: Frame? = nil
+local leftBracket: Frame? = nil
+local rightBracket: Frame? = nil
+local hitTicks: { Frame } = {}
 
-	local frame: Frame = Instance.new("Frame")
-	frame.Name = "Crosshair"
-	frame.Size = UDim2.fromScale(1, 1)
-	frame.BackgroundTransparency = 1
-	frame.Parent = gui
-	container = frame
+local currentGap = BASE_GAP_PX
+local hitFlashRemaining = 0
+local lastHitHeadshot = false
+local renderConnection: RBXScriptConnection? = nil
 
-	-- Create 4 crosshair lines: top, bottom, left, right
-	local directions: { { number } } = {
-		{ 0, -1 },  -- top
-		{ 0, 1 },   -- bottom
-		{ -1, 0 },  -- left
-		{ 1, 0 },   -- right
-	}
+local function createBracket(name: string, parent: GuiObject, size: UDim2): Frame
+	local bracket = Instance.new("Frame")
+	bracket.Name = name
+	bracket.AnchorPoint = Vector2.new(0.5, 0.5)
+	bracket.Position = UDim2.fromScale(0.5, 0.5)
+	bracket.Size = size
+	bracket.BackgroundColor3 = COLOR_DEFAULT
+	bracket.BorderSizePixel = 0
+	bracket.Parent = parent
 
-	for i, dir: { number } in directions do
-		local line: Frame = Instance.new("Frame")
-		line.Name = `Line_{i}`
-		line.AnchorPoint = Vector2.new(0.5, 0.5)
-		line.BackgroundColor3 = NEON_CYAN
-		line.BorderSizePixel = 0
-		line.Parent = frame
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = COLOR_STROKE
+	stroke.Thickness = 1
+	stroke.Transparency = 0.35
+	stroke.Parent = bracket
 
-		if dir[1] == 0 then
-			-- Vertical line (top/bottom)
-			line.Size = UDim2.fromOffset(LINE_THICKNESS, LINE_LENGTH)
-		else
-			-- Horizontal line (left/right)
-			line.Size = UDim2.fromOffset(LINE_LENGTH, LINE_THICKNESS)
-		end
-
-		lines[i] = line
-	end
+	return bracket
 end
 
-function CrosshairModule.update(speed: number, isFiring: boolean, isADS: boolean): ()
-	if not container then
+local function createHitTick(index: number, rotationDeg: number, parent: GuiObject): Frame
+	local holder = Instance.new("Frame")
+	holder.Name = string.format("HitTick_%d", index)
+	holder.AnchorPoint = Vector2.new(0.5, 0.5)
+	holder.Position = UDim2.fromScale(0.5, 0.5)
+	holder.Size = UDim2.fromOffset(2, 7)
+	holder.Rotation = rotationDeg
+	holder.BackgroundColor3 = COLOR_HIT_BODY
+	holder.BackgroundTransparency = 1
+	holder.BorderSizePixel = 0
+	holder.Parent = parent
+
+	return holder
+end
+
+local function readPlanarSpeed(): number
+	if type(MovementController) == "table" then
+		if type(MovementController.CurrentPlanarSpeed) == "number" then
+			return MovementController.CurrentPlanarSpeed
+		elseif type(MovementController.GetPlanarSpeed) == "function" then
+			local ok, val = pcall(MovementController.GetPlanarSpeed)
+			if ok and type(val) == "number" then
+				return val
+			end
+		end
+	end
+	return 0
+end
+
+local function readIsADS(): boolean
+	if type(ViewmodelController) == "table" then
+		if type(ViewmodelController.IsADS) == "function" then
+			local ok, result = pcall(ViewmodelController.IsADS)
+			if ok and type(result) == "boolean" then
+				return result
+			end
+		elseif type(ViewmodelController.IsADS) == "boolean" then
+			return ViewmodelController.IsADS
+		end
+	end
+	return false
+end
+
+local function updateReticle(dt: number)
+	local root = rootFrame
+	local dot = centerDot
+	local topB = topBracket
+	local bottomB = bottomBracket
+	local leftB = leftBracket
+	local rightB = rightBracket
+
+	if not (root and dot and topB and bottomB and leftB and rightB) then
 		return
 	end
 
-	-- Hide during ADS
-	container.Visible = not isADS
+	local speed = readPlanarSpeed()
+	local isAds = readIsADS()
 
-	-- Calculate dynamic gap
-	local speedGap: number = speed * GAP_SPEED_SCALE
-	local fireGap: number = if isFiring then 8 else 0
-	local gap: number = math.clamp(BASE_GAP + speedGap + fireGap, BASE_GAP, MAX_GAP)
+	local speedSpread = math.clamp(speed * SPEED_TO_GAP_FACTOR, 0, MAX_SPEED_GAP_ADDITION)
+	local targetGap = BASE_GAP_PX + speedSpread
+	if isAds then
+		targetGap = math.max(3, targetGap * ADS_GAP_MULTIPLIER)
+	end
 
-	-- Color shift
-	local isOverdrive: boolean = speed > OVERDRIVE_THRESHOLD
-	local color: Color3 = if isOverdrive then OVERDRIVE_ORANGE else NEON_CYAN
+	local alpha = math.clamp(dt * GAP_LERP_SPEED, 0, 1)
+	currentGap = currentGap + (targetGap - currentGap) * alpha
 
-	local directions: { { number } } = {
-		{ 0, -1 },
-		{ 0, 1 },
-		{ -1, 0 },
-		{ 1, 0 },
-	}
+	-- Hitmarker flash decay
+	local activeColor = if isAds then COLOR_ADS else COLOR_DEFAULT
+	local hitExpand = 0
 
-	for i, dir: { number } in directions do
-		local line: Frame? = lines[i]
-		if line then
-			local offset: number = gap + LINE_LENGTH / 2
-			line.Position = UDim2.new(0.5, dir[1] * offset, 0.5, dir[2] * offset)
-			line.BackgroundColor3 = color
+	if hitFlashRemaining > 0 then
+		hitFlashRemaining = math.max(0, hitFlashRemaining - dt)
+		local flashRatio = hitFlashRemaining / HIT_FLASH_DURATION
+		local flashColor = if lastHitHeadshot then COLOR_HIT_HEAD else COLOR_HIT_BODY
+		activeColor = activeColor:Lerp(flashColor, flashRatio)
+		hitExpand = flashRatio * (if lastHitHeadshot then 5 else 3)
+
+		local tickDist = 10 + flashRatio * 4
+		for i, tick in ipairs(hitTicks) do
+			local angleRad = math.rad((i - 1) * 90 + 45)
+			local ox = math.cos(angleRad) * tickDist
+			local oy = math.sin(angleRad) * tickDist
+			tick.Position = UDim2.new(0.5, math.round(ox), 0.5, math.round(oy))
+			tick.BackgroundColor3 = flashColor
+			tick.BackgroundTransparency = 1 - flashRatio
+		end
+	else
+		for _, tick in ipairs(hitTicks) do
+			tick.BackgroundTransparency = 1
 		end
 	end
+
+	local finalGap = math.round(currentGap + hitExpand)
+
+	dot.BackgroundColor3 = activeColor
+	topB.BackgroundColor3 = activeColor
+	bottomB.BackgroundColor3 = activeColor
+	leftB.BackgroundColor3 = activeColor
+	rightB.BackgroundColor3 = activeColor
+
+	topB.Position = UDim2.new(0.5, 0, 0.5, -(finalGap + BRACKET_LENGTH * 0.5))
+	bottomB.Position = UDim2.new(0.5, 0, 0.5, finalGap + BRACKET_LENGTH * 0.5)
+	leftB.Position = UDim2.new(0.5, -(finalGap + BRACKET_LENGTH * 0.5), 0.5, 0)
+	rightB.Position = UDim2.new(0.5, finalGap + BRACKET_LENGTH * 0.5, 0.5, 0)
+end
+
+function CrosshairModule.Init(parentGui: ScreenGui)
+	if isInitialized then
+		if rootFrame and parentGui then
+			rootFrame.Parent = parentGui
+		end
+		return
+	end
+	isInitialized = true
+
+	local container = Instance.new("Frame")
+	container.Name = "CrosshairContainer"
+	container.AnchorPoint = Vector2.new(0.5, 0.5)
+	container.Position = UDim2.fromScale(0.5, 0.5)
+	container.Size = UDim2.fromOffset(120, 120)
+	container.BackgroundTransparency = 1
+	container.Parent = parentGui
+	rootFrame = container
+
+	-- Center Dot (2x2 px)
+	local dot = Instance.new("Frame")
+	dot.Name = "CenterDot"
+	dot.AnchorPoint = Vector2.new(0.5, 0.5)
+	dot.Position = UDim2.fromScale(0.5, 0.5)
+	dot.Size = UDim2.fromOffset(2, 2)
+	dot.BackgroundColor3 = COLOR_DEFAULT
+	dot.BorderSizePixel = 0
+	dot.Parent = container
+
+	local dotStroke = Instance.new("UIStroke")
+	dotStroke.Color = COLOR_STROKE
+	dotStroke.Thickness = 1
+	dotStroke.Transparency = 0.35
+	dotStroke.Parent = dot
+	centerDot = dot
+
+	-- 4 Minimalist Sci-Fi Brackets
+	topBracket = createBracket("TopBracket", container, UDim2.fromOffset(BRACKET_THICKNESS, BRACKET_LENGTH))
+	bottomBracket = createBracket("BottomBracket", container, UDim2.fromOffset(BRACKET_THICKNESS, BRACKET_LENGTH))
+	leftBracket = createBracket("LeftBracket", container, UDim2.fromOffset(BRACKET_LENGTH, BRACKET_THICKNESS))
+	rightBracket = createBracket("RightBracket", container, UDim2.fromOffset(BRACKET_LENGTH, BRACKET_THICKNESS))
+
+	-- 4 Diagonal Hitmarker Ticks
+	table.clear(hitTicks)
+	for i = 1, 4 do
+		local rot = (i - 1) * 90 + 45
+		table.insert(hitTicks, createHitTick(i, rot, container))
+	end
+
+	renderConnection = RunService.RenderStepped:Connect(updateReticle)
+end
+
+function CrosshairModule.TriggerHitmarker(isHeadshot: boolean)
+	lastHitHeadshot = isHeadshot == true
+	hitFlashRemaining = HIT_FLASH_DURATION
+	currentGap = currentGap + (if lastHitHeadshot then 4 else 2)
 end
 
 return CrosshairModule

@@ -1,6 +1,7 @@
 std = "roblox"
 
-[rules]
-global_usage = "allow"
-shadowing = "warn"
+[lints]
+multiple_statements = "allow"
+shadowing = "allow"
 unused_variable = "warn"
+global_usage = "deny"

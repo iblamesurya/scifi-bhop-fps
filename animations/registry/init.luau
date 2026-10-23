@@ -1,25 +1,16 @@
 --!strict
--- Master AnimationRegistry: queries viewmodel and character animation data
 
 local ViewmodelAnims = require(script.ViewmodelAnims)
 local CharacterAnims = require(script.CharacterAnims)
 
-type AnimData = ViewmodelAnims.AnimData
+export type AnimEntry = ViewmodelAnims.AnimEntry
+export type WeaponAnimSet = ViewmodelAnims.WeaponAnimSet
+export type ViewmodelAnimRegistry = ViewmodelAnims.ViewmodelAnimRegistry
+export type CharacterAnimRegistry = CharacterAnims.CharacterAnimRegistry
 
-local AnimationRegistry = {}
-
-function AnimationRegistry.getViewmodelAnim(weaponId: string, animName: string): AnimData
-	local weaponAnims = ViewmodelAnims[weaponId]
-	assert(weaponAnims, `AnimationRegistry: unknown weapon "{weaponId}"`)
-	local anim = weaponAnims[animName]
-	assert(anim, `AnimationRegistry: unknown anim "{animName}" for weapon "{weaponId}"`)
-	return anim
-end
-
-function AnimationRegistry.getCharacterAnim(animName: string): AnimData
-	local anim = CharacterAnims[animName]
-	assert(anim, `AnimationRegistry: unknown character anim "{animName}"`)
-	return anim
-end
+local AnimationRegistry = table.freeze({
+	ViewmodelAnims = ViewmodelAnims,
+	CharacterAnims = CharacterAnims,
+})
 
 return AnimationRegistry

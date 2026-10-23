@@ -1,43 +1,38 @@
 --!strict
--- Server bootstrapper: initializes combat, replication, character, and loadout systems
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
+local function requireServerModule(moduleName: string, directPath: Instance?): any
+	if directPath and directPath:IsA("ModuleScript") then
+		return require(directPath)
+	end
 
-local HitboxHistory = require(script.combat.HitboxHistory)
-local CombatValidator = require(script.combat.CombatValidator)
-local LoadoutService = require(script.combat.LoadoutService)
-local CharacterService = require(script.character.CharacterService)
-local StanceReplicator = require(script.replication.StanceReplicator)
+	local found = script:FindFirstChild(moduleName, true)
+	if found and found:IsA("ModuleScript") then
+		return require(found)
+	end
 
--- Create RemoteEvents
-local shotEvent: RemoteEvent = Instance.new("RemoteEvent")
-shotEvent.Name = "ShotEvent"
-shotEvent.Parent = ReplicatedStorage
+	error(`[ServerBootstrap] Missing required server module: {moduleName}`)
+end
 
-local stanceEvent: UnreliableRemoteEvent = Instance.new("UnreliableRemoteEvent")
-stanceEvent.Name = "StanceEvent"
-stanceEvent.Parent = ReplicatedStorage
+local ArenaGenerator = requireServerModule("ArenaGenerator")
+local HitboxHistory = requireServerModule(
+	"HitboxHistory",
+	if script:FindFirstChild("combat") then script.combat:FindFirstChild("HitboxHistory") else nil
+)
+local CombatValidator = requireServerModule(
+	"CombatValidator",
+	if script:FindFirstChild("combat") then script.combat:FindFirstChild("CombatValidator") else nil
+)
+local StanceReplicator = requireServerModule(
+	"StanceReplicator",
+	if script:FindFirstChild("replication") then script.replication:FindFirstChild("StanceReplicator") else nil
+)
+local MatchService = requireServerModule(
+	"MatchService",
+	if script:FindFirstChild("match") then script.match:FindFirstChild("MatchService") else nil
+)
 
--- Initialize systems
-CharacterService.init()
-LoadoutService.init()
-CombatValidator.init(shotEvent)
-StanceReplicator.init(stanceEvent)
-
--- Start 60Hz hitbox recording
-RunService.Heartbeat:Connect(function(_dt: number): ()
-	HitboxHistory.recordSnapshot()
-end)
-
--- Player lifecycle
-Players.PlayerAdded:Connect(function(player: Player): ()
-	LoadoutService.initPlayer(player)
-end)
-
-Players.PlayerRemoving:Connect(function(player: Player): ()
-	LoadoutService.removePlayer(player)
-end)
-
-print("[Server] SciFi B-Hop FPS server initialized")
+ArenaGenerator.Init()
+HitboxHistory.Init()
+CombatValidator.Init()
+StanceReplicator.Init()
+MatchService.Init()

@@ -1,6 +1,11 @@
+[creator]
+type = "user"
+id = 0
+
 [codegen]
 style = "nested"
 typescript = false
+strip_extension = true
 
 [inputs.audio]
 path = "assets/audio/**/*"
