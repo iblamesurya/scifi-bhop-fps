@@ -1,7 +1,7 @@
 --!strict
 
-local ViewmodelAnims = require(script.ViewmodelAnims)
-local CharacterAnims = require(script.CharacterAnims)
+local ViewmodelAnims = require(script:WaitForChild("ViewmodelAnims"))
+local CharacterAnims = require(script:WaitForChild("CharacterAnims"))
 
 export type AnimEntry = ViewmodelAnims.AnimEntry
 export type WeaponAnimSet = ViewmodelAnims.WeaponAnimSet

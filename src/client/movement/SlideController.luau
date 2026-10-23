@@ -12,11 +12,13 @@ local HARD_SPEED_CAP: number = MovementConfig.HardSpeedCap or 85
 
 local SlideController = {
 	IsSliding = false,
+	IsCrouched = false,
 	CurrentCameraOffsetY = 0,
 }
 
 function SlideController.Init()
 	SlideController.IsSliding = false
+	SlideController.IsCrouched = false
 	SlideController.CurrentCameraOffsetY = 0
 end
 
@@ -29,6 +31,7 @@ function SlideController.TryStartSlide(planarVelocity: Vector3, isGrounded: bool
 	end
 
 	SlideController.IsSliding = true
+	SlideController.IsCrouched = true
 
 	local boostDir = if speed > 1e-4 then flatVelocity.Unit else Vector3.zero
 	local boostedVelocity = flatVelocity + (boostDir * SLIDE_BOOST_IMPULSE)
@@ -44,15 +47,27 @@ function SlideController.StopSlide()
 	SlideController.IsSliding = false
 end
 
-function SlideController.Step(dt: number, isGrounded: boolean, planarSpeed: number)
+function SlideController.Step(
+	dt: number,
+	isGrounded: boolean,
+	planarSpeed: number,
+	hasOverheadClearance: boolean?
+)
+	local canUncrouch = if hasOverheadClearance == nil then true else hasOverheadClearance
+
 	if SlideController.IsSliding then
 		if planarSpeed < (MIN_SLIDE_SPEED * 0.6) then
 			SlideController.IsSliding = false
 		end
 	end
 
-	local targetOffsetY = if SlideController.IsSliding and isGrounded
-			or SlideController.IsSliding
+	if SlideController.IsSliding then
+		SlideController.IsCrouched = true
+	elseif canUncrouch then
+		SlideController.IsCrouched = false
+	end
+
+	local targetOffsetY = if (SlideController.IsSliding and isGrounded) or SlideController.IsCrouched
 		then SLIDE_CAMERA_OFFSET_Y
 		else 0
 

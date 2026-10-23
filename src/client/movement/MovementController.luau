@@ -11,7 +11,9 @@ local QuakeMath = require(ReplicatedStorage.Shared.math.QuakeMath)
 local SlideController = require(script.Parent.SlideController)
 
 local GROUND_RAY_LENGTH: number = MovementConfig.GroundRayLength or 3.4
+local OVERHEAD_CLEARANCE_RAY_LENGTH: number = 3.6
 local JUMP_VELOCITY: number = MovementConfig.JumpVelocity or 42
+local JUMP_GRACE_DURATION: number = 0.05
 local GRAVITY: number = MovementConfig.Gravity or Workspace.Gravity
 local GROUND_ACCELERATE: number = MovementConfig.GroundAccelerate or MovementConfig.Accelerate or 14
 local AIR_ACCELERATE: number = MovementConfig.AirAccelerate or 120
@@ -21,6 +23,11 @@ local GROUND_FRICTION: number = MovementConfig.GroundFriction or MovementConfig.
 local SLIDE_FRICTION: number = MovementConfig.SlideFriction or 1.25
 local STOP_SPEED: number = MovementConfig.StopSpeed or 10
 local HARD_SPEED_CAP: number = MovementConfig.HardSpeedCap or 85
+
+local STANCE_SYNC_INTERVAL: number = 0.05
+local STANCE_STANDING: number = 0
+local STANCE_AIRBORNE: number = 1
+local STANCE_SLIDING: number = 2
 
 local localPlayer = Players.LocalPlayer
 
@@ -35,23 +42,106 @@ local MovementController = {
 local jumpQueued = false
 local slideQueued = false
 local wasGrounded = false
+local jumpGraceTimer = 0
 local planarVelocity = Vector3.zero
 local verticalVelocity = 0
 local initialized = false
+
+local stanceBuf = buffer.create(5)
+local stanceSyncAccumulator = 0
+local stanceRemote: UnreliableRemoteEvent? = nil
+
+local cachedCharacter: Model? = nil
+local defaultRootJointC0: CFrame? = nil
+local defaultLeftHipC0: CFrame? = nil
+local defaultRightHipC0: CFrame? = nil
+local defaultRootCanCollide: boolean? = nil
+local defaultLeftLegCanCollide: boolean? = nil
+local defaultRightLegCanCollide: boolean? = nil
 
 local raycastParams = RaycastParams.new()
 raycastParams.FilterType = Enum.RaycastFilterType.Exclude
 raycastParams.IgnoreWater = true
 
-local frictionArity = select(1, debug.info(QuakeMath.ApplyFriction, "a"))
+local function cacheCharacterRig(character: Model, rootPart: BasePart)
+	if cachedCharacter == character then
+		return
+	end
+	cachedCharacter = character
 
-local function applyFriction(velocity: Vector3, friction: number, dt: number): Vector3
-	if frictionArity >= 4 then
-		return (QuakeMath.ApplyFriction :: any)(velocity, friction, STOP_SPEED, dt)
-	elseif frictionArity == 3 then
-		return (QuakeMath.ApplyFriction :: any)(velocity, friction, dt)
+	local torso = (character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso")) :: BasePart?
+	local rootJoint = (
+		rootPart:FindFirstChild("RootJoint") or (torso and torso:FindFirstChild("RootJoint"))
+	) :: Motor6D?
+	local leftHip = (torso and torso:FindFirstChild("Left Hip")) :: Motor6D?
+	local rightHip = (torso and torso:FindFirstChild("Right Hip")) :: Motor6D?
+	local leftLeg = character:FindFirstChild("Left Leg") :: BasePart?
+	local rightLeg = character:FindFirstChild("Right Leg") :: BasePart?
+
+	defaultRootJointC0 = if rootJoint then rootJoint.C0 else nil
+	defaultLeftHipC0 = if leftHip then leftHip.C0 else nil
+	defaultRightHipC0 = if rightHip then rightHip.C0 else nil
+	defaultRootCanCollide = rootPart.CanCollide
+	defaultLeftLegCanCollide = if leftLeg then leftLeg.CanCollide else nil
+	defaultRightLegCanCollide = if rightLeg then rightLeg.CanCollide else nil
+end
+
+local function updateSlideColliderAndRig(
+	character: Model,
+	rootPart: BasePart,
+	isCrouched: boolean,
+	cameraOffsetY: number
+)
+	cacheCharacterRig(character, rootPart)
+
+	local head = character:FindFirstChild("Head") :: BasePart?
+	local torso = (character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso")) :: BasePart?
+	local leftLeg = character:FindFirstChild("Left Leg") :: BasePart?
+	local rightLeg = character:FindFirstChild("Right Leg") :: BasePart?
+	local rootJoint = (
+		rootPart:FindFirstChild("RootJoint") or (torso and torso:FindFirstChild("RootJoint"))
+	) :: Motor6D?
+	local leftHip = (torso and torso:FindFirstChild("Left Hip")) :: Motor6D?
+	local rightHip = (torso and torso:FindFirstChild("Right Hip")) :: Motor6D?
+
+	if isCrouched then
+		if head then
+			head.CanCollide = false
+		end
+		if torso then
+			torso.CanCollide = false
+		end
+		if leftLeg and rightLeg then
+			rootPart.CanCollide = false
+			leftLeg.CanCollide = true
+			rightLeg.CanCollide = true
+		end
 	else
-		return (QuakeMath.ApplyFriction :: any)(velocity, dt)
+		if head then
+			head.CanCollide = true
+		end
+		if torso then
+			torso.CanCollide = true
+		end
+		if defaultRootCanCollide ~= nil then
+			rootPart.CanCollide = defaultRootCanCollide
+		end
+		if leftLeg and defaultLeftLegCanCollide ~= nil then
+			leftLeg.CanCollide = defaultLeftLegCanCollide
+		end
+		if rightLeg and defaultRightLegCanCollide ~= nil then
+			rightLeg.CanCollide = defaultRightLegCanCollide
+		end
+	end
+
+	if rootJoint and defaultRootJointC0 then
+		rootJoint.C0 = CFrame.new(0, cameraOffsetY, 0) * defaultRootJointC0
+	end
+	if leftHip and defaultLeftHipC0 then
+		leftHip.C0 = CFrame.new(0, -cameraOffsetY, 0) * defaultLeftHipC0
+	end
+	if rightHip and defaultRightHipC0 then
+		rightHip.C0 = CFrame.new(0, -cameraOffsetY, 0) * defaultRightHipC0
 	end
 end
 
@@ -106,6 +196,18 @@ function MovementController.Init()
 
 	SlideController.Init()
 
+	local existingRemote = ReplicatedStorage:FindFirstChild("StanceSyncBuffer")
+	if existingRemote and existingRemote:IsA("UnreliableRemoteEvent") then
+		stanceRemote = existingRemote
+	else
+		task.spawn(function()
+			local waited = ReplicatedStorage:WaitForChild("StanceSyncBuffer")
+			if waited and waited:IsA("UnreliableRemoteEvent") then
+				stanceRemote = waited
+			end
+		end)
+	end
+
 	UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessed: boolean)
 		if gameProcessed then
 			return
@@ -134,11 +236,13 @@ function MovementController.Init()
 		planarVelocity = Vector3.zero
 		verticalVelocity = 0
 		wasGrounded = false
+		jumpGraceTimer = 0
+		cachedCharacter = nil
 		MovementController.CurrentPlanarSpeed = 0
 		MovementController.IsGrounded = false
 		MovementController.IsSliding = false
 		MovementController.Velocity = Vector3.zero
-		SlideController.StopSlide()
+		SlideController.Init()
 	end)
 
 	RunService.RenderStepped:Connect(function(dt: number)
@@ -159,6 +263,10 @@ function MovementController.Init()
 			jumpQueued = UserInputService:IsKeyDown(Enum.KeyCode.Space)
 		end
 
+		if jumpGraceTimer > 0 then
+			jumpGraceTimer = math.max(0, jumpGraceTimer - dt)
+		end
+
 		raycastParams.FilterDescendantsInstances = { character }
 		local groundHit = Workspace:Raycast(
 			rootPart.Position,
@@ -166,7 +274,11 @@ function MovementController.Init()
 			raycastParams
 		)
 
-		local isGrounded = groundHit ~= nil and groundHit.Normal.Y >= 0.5 and verticalVelocity <= 0.01
+		local isGrounded = false
+		if jumpGraceTimer <= 0 then
+			isGrounded = groundHit ~= nil and groundHit.Normal.Y >= 0.5 and verticalVelocity <= 0.01
+		end
+
 		local landedThisFrame = isGrounded and not wasGrounded
 
 		if landedThisFrame then
@@ -181,9 +293,11 @@ function MovementController.Init()
 		end
 
 		-- Auto-Bhop: on landing frame (or while grounded), if jumpQueued is true,
-		-- immediately apply JumpVelocity and mark airborne so ApplyFriction is bypassed.
+		-- immediately apply JumpVelocity, start the 0.05s grace window, and mark airborne
+		-- so QuakeMath.ApplyFriction is bypassed.
 		if isGrounded and jumpQueued then
 			verticalVelocity = JUMP_VELOCITY
+			jumpGraceTimer = JUMP_GRACE_DURATION
 			isGrounded = false
 		elseif isGrounded then
 			verticalVelocity = 0
@@ -193,7 +307,7 @@ function MovementController.Init()
 
 		if isGrounded then
 			local activeFriction = if SlideController.IsSliding then SLIDE_FRICTION else GROUND_FRICTION
-			planarVelocity = applyFriction(planarVelocity, activeFriction, dt)
+			planarVelocity = QuakeMath.ApplyFriction(planarVelocity, activeFriction, dt, STOP_SPEED)
 
 			if not SlideController.IsSliding then
 				planarVelocity = QuakeMath.Accelerate(
@@ -221,8 +335,22 @@ function MovementController.Init()
 			currentSpeed = HARD_SPEED_CAP
 		end
 
-		SlideController.Step(dt, isGrounded, currentSpeed)
+		-- Check 3.6-stud upward clearance before allowing the character to uncrouch
+		local overheadHit = Workspace:Raycast(
+			rootPart.Position,
+			Vector3.new(0, OVERHEAD_CLEARANCE_RAY_LENGTH, 0),
+			raycastParams
+		)
+		local hasOverheadClearance = overheadHit == nil
+
+		SlideController.Step(dt, isGrounded, currentSpeed, hasOverheadClearance)
 		humanoid.CameraOffset = Vector3.new(0, SlideController.CurrentCameraOffsetY, 0)
+		updateSlideColliderAndRig(
+			character,
+			rootPart,
+			SlideController.IsCrouched,
+			SlideController.CurrentCameraOffsetY
+		)
 
 		local finalVelocity = Vector3.new(planarVelocity.X, verticalVelocity, planarVelocity.Z)
 		rootPart.AssemblyLinearVelocity = finalVelocity
@@ -232,6 +360,26 @@ function MovementController.Init()
 		MovementController.IsGrounded = isGrounded
 		MovementController.IsSliding = SlideController.IsSliding
 		MovementController.Velocity = finalVelocity
+
+		-- Replicate stance & camera look pitch at 20Hz (0.05s accumulator) using pre-allocated 5-byte buffer
+		stanceSyncAccumulator += dt
+		if stanceSyncAccumulator >= STANCE_SYNC_INTERVAL then
+			stanceSyncAccumulator %= STANCE_SYNC_INTERVAL
+			if stanceRemote then
+				local camera = Workspace.CurrentCamera
+				local pitch = if camera
+					then math.asin(math.clamp(camera.CFrame.LookVector.Y, -1, 1))
+					else 0
+				local stanceCode = if SlideController.IsSliding or SlideController.IsCrouched
+					then STANCE_SLIDING
+					elseif not isGrounded then STANCE_AIRBORNE
+					else STANCE_STANDING
+
+				buffer.writef32(stanceBuf, 0, pitch)
+				buffer.writeu8(stanceBuf, 4, stanceCode)
+				stanceRemote:FireServer(stanceBuf)
+			end
+		end
 	end)
 end
 

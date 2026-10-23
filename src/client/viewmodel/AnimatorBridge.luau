@@ -2,7 +2,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-export type TrackName = "Idle" | "Equip" | "Reload"
+export type TrackName = "Idle" | "Equip" | "Reload" | "Fire"
 
 type AnimEntry = {
 	Id: string,
@@ -15,6 +15,7 @@ type WeaponAnimSet = {
 	Idle: AnimEntry,
 	Equip: AnimEntry,
 	Reload: AnimEntry,
+	Fire: AnimEntry,
 	[string]: AnimEntry,
 }
 
@@ -38,6 +39,12 @@ local FALLBACK_VIEWMODEL_ANIMS: { [string]: WeaponAnimSet } = table.freeze({
 			FadeTime = 0.12,
 			Speed = 1.0,
 		}),
+		Fire = table.freeze({
+			Id = "rbxassetid://0",
+			Priority = Enum.AnimationPriority.Action3,
+			FadeTime = 0.03,
+			Speed = 1.35,
+		}),
 	}),
 	HELIOS_RAIL = table.freeze({
 		Idle = table.freeze({
@@ -58,26 +65,35 @@ local FALLBACK_VIEWMODEL_ANIMS: { [string]: WeaponAnimSet } = table.freeze({
 			FadeTime = 0.15,
 			Speed = 0.85,
 		}),
+		Fire = table.freeze({
+			Id = "rbxassetid://0",
+			Priority = Enum.AnimationPriority.Action3,
+			FadeTime = 0.04,
+			Speed = 1.0,
+		}),
 	}),
 })
 
 local function resolveViewmodelAnims(): { [string]: WeaponAnimSet }
-	local animsFolder = ReplicatedStorage:FindFirstChild("Animations")
-		or ReplicatedStorage:FindFirstChild("AnimationRegistry")
-	if animsFolder then
-		local vmModule = if animsFolder:IsA("ModuleScript")
-			then animsFolder:FindFirstChild("ViewmodelAnims") or animsFolder
-			else animsFolder:FindFirstChild("ViewmodelAnims", true)
-		if vmModule and vmModule:IsA("ModuleScript") then
-			local ok, result = pcall(require, vmModule)
-			if ok and type(result) == "table" then
-				if result.ViewmodelAnims then
+	local animationsFolder = ReplicatedStorage:WaitForChild("Animations", 5)
+	if animationsFolder then
+		local registryModuleOrFolder = animationsFolder:WaitForChild("Registry", 5)
+		if registryModuleOrFolder then
+			local vmModule = registryModuleOrFolder:WaitForChild("ViewmodelAnims", 5)
+			if vmModule and vmModule:IsA("ModuleScript") then
+				local ok, result = pcall(require, vmModule)
+				if ok and type(result) == "table" then
+					return result :: { [string]: WeaponAnimSet }
+				end
+			elseif registryModuleOrFolder:IsA("ModuleScript") then
+				local ok, result = pcall(require, registryModuleOrFolder)
+				if ok and type(result) == "table" and type(result.ViewmodelAnims) == "table" then
 					return result.ViewmodelAnims :: { [string]: WeaponAnimSet }
 				end
-				return result :: { [string]: WeaponAnimSet }
 			end
 		end
 	end
+
 	return FALLBACK_VIEWMODEL_ANIMS
 end
 
@@ -115,6 +131,10 @@ local function isUsableAssetId(assetId: string): boolean
 	return assetId ~= "" and assetId ~= "rbxassetid://0" and assetId ~= "0"
 end
 
+function AnimatorBridge.HasTrack(trackName: TrackName): boolean
+	return loadedTracks[trackName] ~= nil
+end
+
 function AnimatorBridge.StopAll()
 	for _, track in loadedTracks do
 		if track.IsPlaying then
@@ -147,7 +167,7 @@ function AnimatorBridge.BindRig(viewmodel: Model, weaponId: string)
 		return
 	end
 
-	local trackNames: { TrackName } = { "Idle", "Equip", "Reload" }
+	local trackNames: { TrackName } = { "Idle", "Equip", "Reload", "Fire" }
 	for _, name in trackNames do
 		local entry = animSet[name]
 		if entry then
@@ -171,11 +191,11 @@ function AnimatorBridge.BindRig(viewmodel: Model, weaponId: string)
 	end
 end
 
-function AnimatorBridge.PlayTrack(trackName: TrackName)
+function AnimatorBridge.PlayTrack(trackName: TrackName): boolean
 	local config = trackConfigs[trackName]
 	local track = loadedTracks[trackName]
 	if not track or not config then
-		return
+		return false
 	end
 
 	if trackName ~= "Idle" then
@@ -188,10 +208,12 @@ function AnimatorBridge.PlayTrack(trackName: TrackName)
 		end
 	end
 
-	pcall(function()
+	local ok = pcall(function()
 		track.Priority = config.Priority
 		track:Play(config.FadeTime, 1.0, config.Speed)
 	end)
+
+	return ok
 end
 
 return table.freeze(AnimatorBridge)

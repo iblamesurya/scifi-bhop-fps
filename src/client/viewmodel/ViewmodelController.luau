@@ -98,6 +98,8 @@ local HIP_OFFSET = CFrame.new(0.48, -0.42, -0.78)
 local ADS_EYE_RELIEF = CFrame.new(0, 0, -0.55)
 local STRAFE_ROLL_DEG = 4.5
 local SLIDE_ROLL_DEG = -8.0
+local RELOAD_DIP_Y = -0.22
+local RELOAD_TILT_Z_RAD = math.rad(28)
 
 local ViewmodelController = {}
 
@@ -107,6 +109,11 @@ local adsAlpha = 0
 local currentRollRad = 0
 local bobPhase = 0
 
+local isProceduralReloading = false
+local reloadElapsed = 0
+local reloadDuration = 0
+local currentReloadAlpha = 0
+
 local currentWeaponId: string = "VORTEX_SMG"
 local activeViewmodel: Model? = nil
 local rootPart: BasePart? = nil
@@ -115,10 +122,29 @@ local weaponMesh: BasePart? = nil
 local muzzleAttachment: Attachment? = nil
 
 local swaySpring = createSpring(140, 16, 1)
-local recoilSpring = createSpring(180, 18, 1)
+local recoilPosSpring = createSpring(180, 18, 1)
+local recoilRotSpring = createSpring(200, 16, 1)
 local landingSpring = createSpring(150, 14, 1)
 
 local inputConnections: { RBXScriptConnection } = {}
+
+local function getWeaponConfig(weaponId: string): any
+	if type(WeaponData) == "table" then
+		if type(WeaponData[weaponId]) == "table" then
+			return WeaponData[weaponId]
+		end
+		if type(WeaponData.Weapons) == "table" and type(WeaponData.Weapons[weaponId]) == "table" then
+			return WeaponData.Weapons[weaponId]
+		end
+		if type(WeaponData.GetWeapon) == "function" then
+			local ok, config = pcall(WeaponData.GetWeapon, weaponId)
+			if ok and type(config) == "table" then
+				return config
+			end
+		end
+	end
+	return nil
+end
 
 local function isSlidingActive(): boolean
 	if type(SlideController) == "table" then
@@ -332,7 +358,7 @@ local function updateRenderStep(dt: number)
 		activeViewmodel.Parent = camera
 	end
 
-	-- 1. Mouse delta sway impulse
+	-- 1. Mouse delta sway & springs
 	local mouseDelta = UserInputService:GetMouseDelta()
 	local swayScale = if isADSState then 0.0012 else 0.0032
 	swaySpring.Target = Vector3.new(
@@ -341,7 +367,8 @@ local function updateRenderStep(dt: number)
 		0
 	)
 	local swayPos = swaySpring:Update(dt)
-	local recoilOffset = recoilSpring:Update(dt)
+	local recoilPos = recoilPosSpring:Update(dt)
+	local recoilRot = recoilRotSpring:Update(dt)
 	local landingOffset = landingSpring:Update(dt)
 
 	-- 2. Air-strafe roll tilt (±4.5° on A/D, -8° on slide)
@@ -365,15 +392,36 @@ local function updateRenderStep(dt: number)
 	local bobX = math.cos(bobPhase) * bobAmplitude
 	local bobY = math.abs(math.sin(bobPhase)) * -bobAmplitude
 
-	-- 4. Dynamic AimPart:ToObjectSpace ADS interpolation
-	local targetAds = if isADSState then 1 else 0
-	local adsSpeed = 16
-	if type(WeaponData) == "table" then
-		local wConfig = WeaponData[currentWeaponId]
-			or (if type(WeaponData.Weapons) == "table" then WeaponData.Weapons[currentWeaponId] else nil)
-		if type(wConfig) == "table" and type(wConfig.AimSpeed) == "number" then
-			adsSpeed = wConfig.AimSpeed
+	-- 4. Procedural reload envelope (tilting 28° on Z and dipping -0.22 studs on Y over duration)
+	local targetReloadAlpha = 0
+	if isProceduralReloading then
+		reloadElapsed += dt
+		if reloadElapsed >= reloadDuration then
+			isProceduralReloading = false
+			reloadElapsed = 0
+			targetReloadAlpha = 0
+		else
+			local progress = math.clamp(reloadElapsed / reloadDuration, 0, 1)
+			if progress < 0.2 then
+				targetReloadAlpha = math.sin((progress / 0.2) * (math.pi * 0.5))
+			elseif progress > 0.8 then
+				targetReloadAlpha = math.sin(((1 - progress) / 0.2) * (math.pi * 0.5))
+			else
+				targetReloadAlpha = 1
+			end
 		end
+	end
+	currentReloadAlpha += (targetReloadAlpha - currentReloadAlpha) * (1 - math.exp(-18 * dt))
+
+	local reloadOffsetY = RELOAD_DIP_Y * currentReloadAlpha
+	local reloadTiltZ = RELOAD_TILT_Z_RAD * currentReloadAlpha
+
+	-- 5. Dynamic AimPart:ToObjectSpace ADS interpolation
+	local targetAds = if isADSState and not isProceduralReloading then 1 else 0
+	local adsSpeed = 16
+	local wConfig = getWeaponConfig(currentWeaponId)
+	if type(wConfig) == "table" and type(wConfig.AimSpeed) == "number" then
+		adsSpeed = wConfig.AimSpeed
 	end
 	adsAlpha = adsAlpha + (targetAds - adsAlpha) * (1 - math.exp(-adsSpeed * dt))
 
@@ -381,17 +429,17 @@ local function updateRenderStep(dt: number)
 	local adsTargetCFrame = ADS_EYE_RELIEF * aimToRoot
 	local baseOffset = HIP_OFFSET:Lerp(adsTargetCFrame, adsAlpha)
 
-	-- 5. Combine procedural springs, recoil, and roll
+	-- 6. Combine procedural springs, 3D positional + rotational recoil, reload offset, and roll
 	local proceduralTranslation = Vector3.new(
-		swayPos.X + bobX,
-		swayPos.Y + bobY + landingOffset.Y + (recoilOffset.Y * 0.12),
-		recoilOffset.Z
+		swayPos.X + bobX + recoilPos.X,
+		swayPos.Y + bobY + landingOffset.Y + recoilPos.Y + reloadOffsetY,
+		recoilPos.Z
 	)
 
 	local proceduralRotation = CFrame.Angles(
-		recoilOffset.X + (landingOffset.Y * 0.35) - (swayPos.Y * 0.8),
-		-swayPos.X * 1.1 + (recoilOffset.Y * 0.25),
-		currentRollRad - (swayPos.X * 1.4)
+		recoilRot.X + (landingOffset.Y * 0.35) - (swayPos.Y * 0.8),
+		recoilRot.Y - (swayPos.X * 1.1),
+		currentRollRad + recoilRot.Z + reloadTiltZ - (swayPos.X * 1.4)
 	)
 
 	currentRoot.CFrame = camera.CFrame * baseOffset * CFrame.new(proceduralTranslation) * proceduralRotation
@@ -399,6 +447,9 @@ end
 
 function ViewmodelController.EquipWeaponViewmodel(weaponId: string)
 	currentWeaponId = weaponId
+	isProceduralReloading = false
+	reloadElapsed = 0
+	currentReloadAlpha = 0
 
 	if activeViewmodel then
 		AnimatorBridge.StopAll()
@@ -425,9 +476,45 @@ function ViewmodelController.EquipWeaponViewmodel(weaponId: string)
 	AnimatorBridge.PlayTrack("Idle")
 end
 
-function ViewmodelController.ApplyRecoilImpulse(kick: Vector3)
+ViewmodelController.EquipWeapon = ViewmodelController.EquipWeaponViewmodel
+ViewmodelController.SwitchWeapon = ViewmodelController.EquipWeaponViewmodel
+
+function ViewmodelController.ApplyRecoilImpulse(kickPos: Vector3, kickRot: Vector3?)
 	local adsMultiplier = if isADSState then 0.65 else 1.0
-	recoilSpring:Impulse(kick * adsMultiplier)
+	local resolvedRot = kickRot
+	if not resolvedRot then
+		local wConfig = getWeaponConfig(currentWeaponId)
+		if type(wConfig) == "table" and typeof(wConfig.RecoilKickRot) == "Vector3" then
+			resolvedRot = wConfig.RecoilKickRot
+		else
+			resolvedRot = Vector3.new(
+				math.abs(kickPos.Y) * 1.4 + math.abs(kickPos.Z) * 0.6,
+				kickPos.X * 0.5,
+				kickPos.X * 0.35
+			)
+		end
+	end
+
+	recoilPosSpring:Impulse(kickPos * adsMultiplier)
+	recoilRotSpring:Impulse((resolvedRot :: Vector3) * adsMultiplier)
+end
+
+function ViewmodelController.PlayFireAnimation()
+	AnimatorBridge.PlayTrack("Fire")
+end
+
+function ViewmodelController.PlayReloadAnimation(duration: number)
+	local resolvedDuration = if type(duration) == "number" and duration > 0 then duration else 1.5
+	local trackPlayed = AnimatorBridge.PlayTrack("Reload")
+	if not trackPlayed then
+		isProceduralReloading = true
+		reloadElapsed = 0
+		reloadDuration = resolvedDuration
+	end
+end
+
+function ViewmodelController.GetMuzzleAttachment(): Attachment?
+	return muzzleAttachment
 end
 
 function ViewmodelController.GetMuzzleWorldPosition(): Vector3?

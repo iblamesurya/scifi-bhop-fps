@@ -1212,61 +1212,6 @@ end
 return table.freeze(MatchService)
 ````
 
-## File: src/shared/configs/MapConfig.luau
-````
---!strict
---[[
-	MapConfig.luau
-	Read-only arena map bounds, spawn points, jump pads, and bhop ramp surface parameters.
-]]
-
-export type JumpPadSpec = {
-	Position: Vector3,
-	Size: Vector3,
-	LaunchVelocity: Vector3,
-}
-
-export type MapConfigType = {
-	MapName: string,
-	KillPlaneY: number,
-	RespawnDelay: number,
-	SpawnLocations: { CFrame },
-	JumpPads: { JumpPadSpec },
-}
-
-local SpawnLocations: { CFrame } = table.freeze({
-	CFrame.new(-80, 6, -80) * CFrame.Angles(0, math.rad(-45), 0),
-	CFrame.new(80, 6, -80) * CFrame.Angles(0, math.rad(45), 0),
-	CFrame.new(-80, 6, 80) * CFrame.Angles(0, math.rad(-135), 0),
-	CFrame.new(80, 6, 80) * CFrame.Angles(0, math.rad(135), 0),
-	CFrame.new(0, 18, -110) * CFrame.Angles(0, 0, 0),
-	CFrame.new(0, 18, 110) * CFrame.Angles(0, math.rad(180), 0),
-})
-
-local JumpPads: { JumpPadSpec } = table.freeze({
-	table.freeze({
-		Position = Vector3.new(-48, 1.5, 0),
-		Size = Vector3.new(10, 1, 10),
-		LaunchVelocity = Vector3.new(38, 68, 0),
-	}),
-	table.freeze({
-		Position = Vector3.new(48, 1.5, 0),
-		Size = Vector3.new(10, 1, 10),
-		LaunchVelocity = Vector3.new(-38, 68, 0),
-	}),
-})
-
-local MapConfig: MapConfigType = {
-	MapName = "Orbital_Bhop_Proving_Grounds",
-	KillPlaneY = -120,
-	RespawnDelay = 2.5,
-	SpawnLocations = SpawnLocations,
-	JumpPads = JumpPads,
-}
-
-return table.freeze(MapConfig)
-````
-
 ## File: .cursorrules
 ````
 # SCI-FI BHOP FPS — Architecture & AI Agent Context Guide
@@ -2386,6 +2331,61 @@ end
 return LobbyApp
 ````
 
+## File: src/shared/configs/MapConfig.luau
+````
+--!strict
+--[[
+	MapConfig.luau
+	Read-only arena map bounds, spawn points, jump pads, and bhop ramp surface parameters.
+]]
+
+export type JumpPadSpec = {
+	Position: Vector3,
+	Size: Vector3,
+	LaunchVelocity: Vector3,
+}
+
+export type MapConfigType = {
+	MapName: string,
+	KillPlaneY: number,
+	RespawnDelay: number,
+	SpawnLocations: { CFrame },
+	JumpPads: { JumpPadSpec },
+}
+
+local SpawnLocations: { CFrame } = table.freeze({
+	CFrame.new(-80, 6, -80) * CFrame.Angles(0, math.rad(-45), 0),
+	CFrame.new(80, 6, -80) * CFrame.Angles(0, math.rad(45), 0),
+	CFrame.new(-80, 6, 80) * CFrame.Angles(0, math.rad(-135), 0),
+	CFrame.new(80, 6, 80) * CFrame.Angles(0, math.rad(135), 0),
+	CFrame.new(0, 18, -110) * CFrame.Angles(0, 0, 0),
+	CFrame.new(0, 18, 110) * CFrame.Angles(0, math.rad(180), 0),
+})
+
+local JumpPads: { JumpPadSpec } = table.freeze({
+	table.freeze({
+		Position = Vector3.new(-48, 1.5, 0),
+		Size = Vector3.new(10, 1, 10),
+		LaunchVelocity = Vector3.new(38, 68, 0),
+	}),
+	table.freeze({
+		Position = Vector3.new(48, 1.5, 0),
+		Size = Vector3.new(10, 1, 10),
+		LaunchVelocity = Vector3.new(-38, 68, 0),
+	}),
+})
+
+local MapConfig: MapConfigType = {
+	MapName = "Orbital_Bhop_Proving_Grounds",
+	KillPlaneY = -120,
+	RespawnDelay = 2.5,
+	SpawnLocations = SpawnLocations,
+	JumpPads = JumpPads,
+}
+
+return table.freeze(MapConfig)
+````
+
 ## File: .gitattributes
 ````
 # Auto-detect text files and normalize line endings to LF
@@ -2647,8 +2647,8 @@ return CharacterAnims
 ````
 --!strict
 
-local ViewmodelAnims = require(script.ViewmodelAnims)
-local CharacterAnims = require(script.CharacterAnims)
+local ViewmodelAnims = require(script:WaitForChild("ViewmodelAnims"))
+local CharacterAnims = require(script:WaitForChild("CharacterAnims"))
 
 export type AnimEntry = ViewmodelAnims.AnimEntry
 export type WeaponAnimSet = ViewmodelAnims.WeaponAnimSet
@@ -4137,7 +4137,9 @@ local QuakeMath = require(ReplicatedStorage.Shared.math.QuakeMath)
 local SlideController = require(script.Parent.SlideController)
 
 local GROUND_RAY_LENGTH: number = MovementConfig.GroundRayLength or 3.4
+local OVERHEAD_CLEARANCE_RAY_LENGTH: number = 3.6
 local JUMP_VELOCITY: number = MovementConfig.JumpVelocity or 42
+local JUMP_GRACE_DURATION: number = 0.05
 local GRAVITY: number = MovementConfig.Gravity or Workspace.Gravity
 local GROUND_ACCELERATE: number = MovementConfig.GroundAccelerate or MovementConfig.Accelerate or 14
 local AIR_ACCELERATE: number = MovementConfig.AirAccelerate or 120
@@ -4147,6 +4149,11 @@ local GROUND_FRICTION: number = MovementConfig.GroundFriction or MovementConfig.
 local SLIDE_FRICTION: number = MovementConfig.SlideFriction or 1.25
 local STOP_SPEED: number = MovementConfig.StopSpeed or 10
 local HARD_SPEED_CAP: number = MovementConfig.HardSpeedCap or 85
+
+local STANCE_SYNC_INTERVAL: number = 0.05
+local STANCE_STANDING: number = 0
+local STANCE_AIRBORNE: number = 1
+local STANCE_SLIDING: number = 2
 
 local localPlayer = Players.LocalPlayer
 
@@ -4161,23 +4168,106 @@ local MovementController = {
 local jumpQueued = false
 local slideQueued = false
 local wasGrounded = false
+local jumpGraceTimer = 0
 local planarVelocity = Vector3.zero
 local verticalVelocity = 0
 local initialized = false
+
+local stanceBuf = buffer.create(5)
+local stanceSyncAccumulator = 0
+local stanceRemote: UnreliableRemoteEvent? = nil
+
+local cachedCharacter: Model? = nil
+local defaultRootJointC0: CFrame? = nil
+local defaultLeftHipC0: CFrame? = nil
+local defaultRightHipC0: CFrame? = nil
+local defaultRootCanCollide: boolean? = nil
+local defaultLeftLegCanCollide: boolean? = nil
+local defaultRightLegCanCollide: boolean? = nil
 
 local raycastParams = RaycastParams.new()
 raycastParams.FilterType = Enum.RaycastFilterType.Exclude
 raycastParams.IgnoreWater = true
 
-local frictionArity = select(1, debug.info(QuakeMath.ApplyFriction, "a"))
+local function cacheCharacterRig(character: Model, rootPart: BasePart)
+	if cachedCharacter == character then
+		return
+	end
+	cachedCharacter = character
 
-local function applyFriction(velocity: Vector3, friction: number, dt: number): Vector3
-	if frictionArity >= 4 then
-		return (QuakeMath.ApplyFriction :: any)(velocity, friction, STOP_SPEED, dt)
-	elseif frictionArity == 3 then
-		return (QuakeMath.ApplyFriction :: any)(velocity, friction, dt)
+	local torso = (character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso")) :: BasePart?
+	local rootJoint = (
+		rootPart:FindFirstChild("RootJoint") or (torso and torso:FindFirstChild("RootJoint"))
+	) :: Motor6D?
+	local leftHip = (torso and torso:FindFirstChild("Left Hip")) :: Motor6D?
+	local rightHip = (torso and torso:FindFirstChild("Right Hip")) :: Motor6D?
+	local leftLeg = character:FindFirstChild("Left Leg") :: BasePart?
+	local rightLeg = character:FindFirstChild("Right Leg") :: BasePart?
+
+	defaultRootJointC0 = if rootJoint then rootJoint.C0 else nil
+	defaultLeftHipC0 = if leftHip then leftHip.C0 else nil
+	defaultRightHipC0 = if rightHip then rightHip.C0 else nil
+	defaultRootCanCollide = rootPart.CanCollide
+	defaultLeftLegCanCollide = if leftLeg then leftLeg.CanCollide else nil
+	defaultRightLegCanCollide = if rightLeg then rightLeg.CanCollide else nil
+end
+
+local function updateSlideColliderAndRig(
+	character: Model,
+	rootPart: BasePart,
+	isCrouched: boolean,
+	cameraOffsetY: number
+)
+	cacheCharacterRig(character, rootPart)
+
+	local head = character:FindFirstChild("Head") :: BasePart?
+	local torso = (character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso")) :: BasePart?
+	local leftLeg = character:FindFirstChild("Left Leg") :: BasePart?
+	local rightLeg = character:FindFirstChild("Right Leg") :: BasePart?
+	local rootJoint = (
+		rootPart:FindFirstChild("RootJoint") or (torso and torso:FindFirstChild("RootJoint"))
+	) :: Motor6D?
+	local leftHip = (torso and torso:FindFirstChild("Left Hip")) :: Motor6D?
+	local rightHip = (torso and torso:FindFirstChild("Right Hip")) :: Motor6D?
+
+	if isCrouched then
+		if head then
+			head.CanCollide = false
+		end
+		if torso then
+			torso.CanCollide = false
+		end
+		if leftLeg and rightLeg then
+			rootPart.CanCollide = false
+			leftLeg.CanCollide = true
+			rightLeg.CanCollide = true
+		end
 	else
-		return (QuakeMath.ApplyFriction :: any)(velocity, dt)
+		if head then
+			head.CanCollide = true
+		end
+		if torso then
+			torso.CanCollide = true
+		end
+		if defaultRootCanCollide ~= nil then
+			rootPart.CanCollide = defaultRootCanCollide
+		end
+		if leftLeg and defaultLeftLegCanCollide ~= nil then
+			leftLeg.CanCollide = defaultLeftLegCanCollide
+		end
+		if rightLeg and defaultRightLegCanCollide ~= nil then
+			rightLeg.CanCollide = defaultRightLegCanCollide
+		end
+	end
+
+	if rootJoint and defaultRootJointC0 then
+		rootJoint.C0 = CFrame.new(0, cameraOffsetY, 0) * defaultRootJointC0
+	end
+	if leftHip and defaultLeftHipC0 then
+		leftHip.C0 = CFrame.new(0, -cameraOffsetY, 0) * defaultLeftHipC0
+	end
+	if rightHip and defaultRightHipC0 then
+		rightHip.C0 = CFrame.new(0, -cameraOffsetY, 0) * defaultRightHipC0
 	end
 end
 
@@ -4232,6 +4322,18 @@ function MovementController.Init()
 
 	SlideController.Init()
 
+	local existingRemote = ReplicatedStorage:FindFirstChild("StanceSyncBuffer")
+	if existingRemote and existingRemote:IsA("UnreliableRemoteEvent") then
+		stanceRemote = existingRemote
+	else
+		task.spawn(function()
+			local waited = ReplicatedStorage:WaitForChild("StanceSyncBuffer")
+			if waited and waited:IsA("UnreliableRemoteEvent") then
+				stanceRemote = waited
+			end
+		end)
+	end
+
 	UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessed: boolean)
 		if gameProcessed then
 			return
@@ -4260,11 +4362,13 @@ function MovementController.Init()
 		planarVelocity = Vector3.zero
 		verticalVelocity = 0
 		wasGrounded = false
+		jumpGraceTimer = 0
+		cachedCharacter = nil
 		MovementController.CurrentPlanarSpeed = 0
 		MovementController.IsGrounded = false
 		MovementController.IsSliding = false
 		MovementController.Velocity = Vector3.zero
-		SlideController.StopSlide()
+		SlideController.Init()
 	end)
 
 	RunService.RenderStepped:Connect(function(dt: number)
@@ -4285,6 +4389,10 @@ function MovementController.Init()
 			jumpQueued = UserInputService:IsKeyDown(Enum.KeyCode.Space)
 		end
 
+		if jumpGraceTimer > 0 then
+			jumpGraceTimer = math.max(0, jumpGraceTimer - dt)
+		end
+
 		raycastParams.FilterDescendantsInstances = { character }
 		local groundHit = Workspace:Raycast(
 			rootPart.Position,
@@ -4292,7 +4400,11 @@ function MovementController.Init()
 			raycastParams
 		)
 
-		local isGrounded = groundHit ~= nil and groundHit.Normal.Y >= 0.5 and verticalVelocity <= 0.01
+		local isGrounded = false
+		if jumpGraceTimer <= 0 then
+			isGrounded = groundHit ~= nil and groundHit.Normal.Y >= 0.5 and verticalVelocity <= 0.01
+		end
+
 		local landedThisFrame = isGrounded and not wasGrounded
 
 		if landedThisFrame then
@@ -4307,9 +4419,11 @@ function MovementController.Init()
 		end
 
 		-- Auto-Bhop: on landing frame (or while grounded), if jumpQueued is true,
-		-- immediately apply JumpVelocity and mark airborne so ApplyFriction is bypassed.
+		-- immediately apply JumpVelocity, start the 0.05s grace window, and mark airborne
+		-- so QuakeMath.ApplyFriction is bypassed.
 		if isGrounded and jumpQueued then
 			verticalVelocity = JUMP_VELOCITY
+			jumpGraceTimer = JUMP_GRACE_DURATION
 			isGrounded = false
 		elseif isGrounded then
 			verticalVelocity = 0
@@ -4319,7 +4433,7 @@ function MovementController.Init()
 
 		if isGrounded then
 			local activeFriction = if SlideController.IsSliding then SLIDE_FRICTION else GROUND_FRICTION
-			planarVelocity = applyFriction(planarVelocity, activeFriction, dt)
+			planarVelocity = QuakeMath.ApplyFriction(planarVelocity, activeFriction, dt, STOP_SPEED)
 
 			if not SlideController.IsSliding then
 				planarVelocity = QuakeMath.Accelerate(
@@ -4347,8 +4461,22 @@ function MovementController.Init()
 			currentSpeed = HARD_SPEED_CAP
 		end
 
-		SlideController.Step(dt, isGrounded, currentSpeed)
+		-- Check 3.6-stud upward clearance before allowing the character to uncrouch
+		local overheadHit = Workspace:Raycast(
+			rootPart.Position,
+			Vector3.new(0, OVERHEAD_CLEARANCE_RAY_LENGTH, 0),
+			raycastParams
+		)
+		local hasOverheadClearance = overheadHit == nil
+
+		SlideController.Step(dt, isGrounded, currentSpeed, hasOverheadClearance)
 		humanoid.CameraOffset = Vector3.new(0, SlideController.CurrentCameraOffsetY, 0)
+		updateSlideColliderAndRig(
+			character,
+			rootPart,
+			SlideController.IsCrouched,
+			SlideController.CurrentCameraOffsetY
+		)
 
 		local finalVelocity = Vector3.new(planarVelocity.X, verticalVelocity, planarVelocity.Z)
 		rootPart.AssemblyLinearVelocity = finalVelocity
@@ -4358,6 +4486,26 @@ function MovementController.Init()
 		MovementController.IsGrounded = isGrounded
 		MovementController.IsSliding = SlideController.IsSliding
 		MovementController.Velocity = finalVelocity
+
+		-- Replicate stance & camera look pitch at 20Hz (0.05s accumulator) using pre-allocated 5-byte buffer
+		stanceSyncAccumulator += dt
+		if stanceSyncAccumulator >= STANCE_SYNC_INTERVAL then
+			stanceSyncAccumulator %= STANCE_SYNC_INTERVAL
+			if stanceRemote then
+				local camera = Workspace.CurrentCamera
+				local pitch = if camera
+					then math.asin(math.clamp(camera.CFrame.LookVector.Y, -1, 1))
+					else 0
+				local stanceCode = if SlideController.IsSliding or SlideController.IsCrouched
+					then STANCE_SLIDING
+					elseif not isGrounded then STANCE_AIRBORNE
+					else STANCE_STANDING
+
+				buffer.writef32(stanceBuf, 0, pitch)
+				buffer.writeu8(stanceBuf, 4, stanceCode)
+				stanceRemote:FireServer(stanceBuf)
+			end
+		end
 	end)
 end
 
@@ -4380,11 +4528,13 @@ local HARD_SPEED_CAP: number = MovementConfig.HardSpeedCap or 85
 
 local SlideController = {
 	IsSliding = false,
+	IsCrouched = false,
 	CurrentCameraOffsetY = 0,
 }
 
 function SlideController.Init()
 	SlideController.IsSliding = false
+	SlideController.IsCrouched = false
 	SlideController.CurrentCameraOffsetY = 0
 end
 
@@ -4397,6 +4547,7 @@ function SlideController.TryStartSlide(planarVelocity: Vector3, isGrounded: bool
 	end
 
 	SlideController.IsSliding = true
+	SlideController.IsCrouched = true
 
 	local boostDir = if speed > 1e-4 then flatVelocity.Unit else Vector3.zero
 	local boostedVelocity = flatVelocity + (boostDir * SLIDE_BOOST_IMPULSE)
@@ -4412,15 +4563,27 @@ function SlideController.StopSlide()
 	SlideController.IsSliding = false
 end
 
-function SlideController.Step(dt: number, isGrounded: boolean, planarSpeed: number)
+function SlideController.Step(
+	dt: number,
+	isGrounded: boolean,
+	planarSpeed: number,
+	hasOverheadClearance: boolean?
+)
+	local canUncrouch = if hasOverheadClearance == nil then true else hasOverheadClearance
+
 	if SlideController.IsSliding then
 		if planarSpeed < (MIN_SLIDE_SPEED * 0.6) then
 			SlideController.IsSliding = false
 		end
 	end
 
-	local targetOffsetY = if SlideController.IsSliding and isGrounded
-			or SlideController.IsSliding
+	if SlideController.IsSliding then
+		SlideController.IsCrouched = true
+	elseif canUncrouch then
+		SlideController.IsCrouched = false
+	end
+
+	local targetOffsetY = if (SlideController.IsSliding and isGrounded) or SlideController.IsCrouched
 		then SLIDE_CAMERA_OFFSET_Y
 		else 0
 
@@ -5200,7 +5363,7 @@ return HudApp
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-export type TrackName = "Idle" | "Equip" | "Reload"
+export type TrackName = "Idle" | "Equip" | "Reload" | "Fire"
 
 type AnimEntry = {
 	Id: string,
@@ -5213,6 +5376,7 @@ type WeaponAnimSet = {
 	Idle: AnimEntry,
 	Equip: AnimEntry,
 	Reload: AnimEntry,
+	Fire: AnimEntry,
 	[string]: AnimEntry,
 }
 
@@ -5236,6 +5400,12 @@ local FALLBACK_VIEWMODEL_ANIMS: { [string]: WeaponAnimSet } = table.freeze({
 			FadeTime = 0.12,
 			Speed = 1.0,
 		}),
+		Fire = table.freeze({
+			Id = "rbxassetid://0",
+			Priority = Enum.AnimationPriority.Action3,
+			FadeTime = 0.03,
+			Speed = 1.35,
+		}),
 	}),
 	HELIOS_RAIL = table.freeze({
 		Idle = table.freeze({
@@ -5256,26 +5426,35 @@ local FALLBACK_VIEWMODEL_ANIMS: { [string]: WeaponAnimSet } = table.freeze({
 			FadeTime = 0.15,
 			Speed = 0.85,
 		}),
+		Fire = table.freeze({
+			Id = "rbxassetid://0",
+			Priority = Enum.AnimationPriority.Action3,
+			FadeTime = 0.04,
+			Speed = 1.0,
+		}),
 	}),
 })
 
 local function resolveViewmodelAnims(): { [string]: WeaponAnimSet }
-	local animsFolder = ReplicatedStorage:FindFirstChild("Animations")
-		or ReplicatedStorage:FindFirstChild("AnimationRegistry")
-	if animsFolder then
-		local vmModule = if animsFolder:IsA("ModuleScript")
-			then animsFolder:FindFirstChild("ViewmodelAnims") or animsFolder
-			else animsFolder:FindFirstChild("ViewmodelAnims", true)
-		if vmModule and vmModule:IsA("ModuleScript") then
-			local ok, result = pcall(require, vmModule)
-			if ok and type(result) == "table" then
-				if result.ViewmodelAnims then
+	local animationsFolder = ReplicatedStorage:WaitForChild("Animations", 5)
+	if animationsFolder then
+		local registryModuleOrFolder = animationsFolder:WaitForChild("Registry", 5)
+		if registryModuleOrFolder then
+			local vmModule = registryModuleOrFolder:WaitForChild("ViewmodelAnims", 5)
+			if vmModule and vmModule:IsA("ModuleScript") then
+				local ok, result = pcall(require, vmModule)
+				if ok and type(result) == "table" then
+					return result :: { [string]: WeaponAnimSet }
+				end
+			elseif registryModuleOrFolder:IsA("ModuleScript") then
+				local ok, result = pcall(require, registryModuleOrFolder)
+				if ok and type(result) == "table" and type(result.ViewmodelAnims) == "table" then
 					return result.ViewmodelAnims :: { [string]: WeaponAnimSet }
 				end
-				return result :: { [string]: WeaponAnimSet }
 			end
 		end
 	end
+
 	return FALLBACK_VIEWMODEL_ANIMS
 end
 
@@ -5313,6 +5492,10 @@ local function isUsableAssetId(assetId: string): boolean
 	return assetId ~= "" and assetId ~= "rbxassetid://0" and assetId ~= "0"
 end
 
+function AnimatorBridge.HasTrack(trackName: TrackName): boolean
+	return loadedTracks[trackName] ~= nil
+end
+
 function AnimatorBridge.StopAll()
 	for _, track in loadedTracks do
 		if track.IsPlaying then
@@ -5345,7 +5528,7 @@ function AnimatorBridge.BindRig(viewmodel: Model, weaponId: string)
 		return
 	end
 
-	local trackNames: { TrackName } = { "Idle", "Equip", "Reload" }
+	local trackNames: { TrackName } = { "Idle", "Equip", "Reload", "Fire" }
 	for _, name in trackNames do
 		local entry = animSet[name]
 		if entry then
@@ -5369,11 +5552,11 @@ function AnimatorBridge.BindRig(viewmodel: Model, weaponId: string)
 	end
 end
 
-function AnimatorBridge.PlayTrack(trackName: TrackName)
+function AnimatorBridge.PlayTrack(trackName: TrackName): boolean
 	local config = trackConfigs[trackName]
 	local track = loadedTracks[trackName]
 	if not track or not config then
-		return
+		return false
 	end
 
 	if trackName ~= "Idle" then
@@ -5386,10 +5569,12 @@ function AnimatorBridge.PlayTrack(trackName: TrackName)
 		end
 	end
 
-	pcall(function()
+	local ok = pcall(function()
 		track.Priority = config.Priority
 		track:Play(config.FadeTime, 1.0, config.Speed)
 	end)
+
+	return ok
 end
 
 return table.freeze(AnimatorBridge)
@@ -5497,6 +5682,8 @@ local HIP_OFFSET = CFrame.new(0.48, -0.42, -0.78)
 local ADS_EYE_RELIEF = CFrame.new(0, 0, -0.55)
 local STRAFE_ROLL_DEG = 4.5
 local SLIDE_ROLL_DEG = -8.0
+local RELOAD_DIP_Y = -0.22
+local RELOAD_TILT_Z_RAD = math.rad(28)
 
 local ViewmodelController = {}
 
@@ -5506,6 +5693,11 @@ local adsAlpha = 0
 local currentRollRad = 0
 local bobPhase = 0
 
+local isProceduralReloading = false
+local reloadElapsed = 0
+local reloadDuration = 0
+local currentReloadAlpha = 0
+
 local currentWeaponId: string = "VORTEX_SMG"
 local activeViewmodel: Model? = nil
 local rootPart: BasePart? = nil
@@ -5514,10 +5706,29 @@ local weaponMesh: BasePart? = nil
 local muzzleAttachment: Attachment? = nil
 
 local swaySpring = createSpring(140, 16, 1)
-local recoilSpring = createSpring(180, 18, 1)
+local recoilPosSpring = createSpring(180, 18, 1)
+local recoilRotSpring = createSpring(200, 16, 1)
 local landingSpring = createSpring(150, 14, 1)
 
 local inputConnections: { RBXScriptConnection } = {}
+
+local function getWeaponConfig(weaponId: string): any
+	if type(WeaponData) == "table" then
+		if type(WeaponData[weaponId]) == "table" then
+			return WeaponData[weaponId]
+		end
+		if type(WeaponData.Weapons) == "table" and type(WeaponData.Weapons[weaponId]) == "table" then
+			return WeaponData.Weapons[weaponId]
+		end
+		if type(WeaponData.GetWeapon) == "function" then
+			local ok, config = pcall(WeaponData.GetWeapon, weaponId)
+			if ok and type(config) == "table" then
+				return config
+			end
+		end
+	end
+	return nil
+end
 
 local function isSlidingActive(): boolean
 	if type(SlideController) == "table" then
@@ -5731,7 +5942,7 @@ local function updateRenderStep(dt: number)
 		activeViewmodel.Parent = camera
 	end
 
-	-- 1. Mouse delta sway impulse
+	-- 1. Mouse delta sway & springs
 	local mouseDelta = UserInputService:GetMouseDelta()
 	local swayScale = if isADSState then 0.0012 else 0.0032
 	swaySpring.Target = Vector3.new(
@@ -5740,7 +5951,8 @@ local function updateRenderStep(dt: number)
 		0
 	)
 	local swayPos = swaySpring:Update(dt)
-	local recoilOffset = recoilSpring:Update(dt)
+	local recoilPos = recoilPosSpring:Update(dt)
+	local recoilRot = recoilRotSpring:Update(dt)
 	local landingOffset = landingSpring:Update(dt)
 
 	-- 2. Air-strafe roll tilt (±4.5° on A/D, -8° on slide)
@@ -5764,15 +5976,36 @@ local function updateRenderStep(dt: number)
 	local bobX = math.cos(bobPhase) * bobAmplitude
 	local bobY = math.abs(math.sin(bobPhase)) * -bobAmplitude
 
-	-- 4. Dynamic AimPart:ToObjectSpace ADS interpolation
-	local targetAds = if isADSState then 1 else 0
-	local adsSpeed = 16
-	if type(WeaponData) == "table" then
-		local wConfig = WeaponData[currentWeaponId]
-			or (if type(WeaponData.Weapons) == "table" then WeaponData.Weapons[currentWeaponId] else nil)
-		if type(wConfig) == "table" and type(wConfig.AimSpeed) == "number" then
-			adsSpeed = wConfig.AimSpeed
+	-- 4. Procedural reload envelope (tilting 28° on Z and dipping -0.22 studs on Y over duration)
+	local targetReloadAlpha = 0
+	if isProceduralReloading then
+		reloadElapsed += dt
+		if reloadElapsed >= reloadDuration then
+			isProceduralReloading = false
+			reloadElapsed = 0
+			targetReloadAlpha = 0
+		else
+			local progress = math.clamp(reloadElapsed / reloadDuration, 0, 1)
+			if progress < 0.2 then
+				targetReloadAlpha = math.sin((progress / 0.2) * (math.pi * 0.5))
+			elseif progress > 0.8 then
+				targetReloadAlpha = math.sin(((1 - progress) / 0.2) * (math.pi * 0.5))
+			else
+				targetReloadAlpha = 1
+			end
 		end
+	end
+	currentReloadAlpha += (targetReloadAlpha - currentReloadAlpha) * (1 - math.exp(-18 * dt))
+
+	local reloadOffsetY = RELOAD_DIP_Y * currentReloadAlpha
+	local reloadTiltZ = RELOAD_TILT_Z_RAD * currentReloadAlpha
+
+	-- 5. Dynamic AimPart:ToObjectSpace ADS interpolation
+	local targetAds = if isADSState and not isProceduralReloading then 1 else 0
+	local adsSpeed = 16
+	local wConfig = getWeaponConfig(currentWeaponId)
+	if type(wConfig) == "table" and type(wConfig.AimSpeed) == "number" then
+		adsSpeed = wConfig.AimSpeed
 	end
 	adsAlpha = adsAlpha + (targetAds - adsAlpha) * (1 - math.exp(-adsSpeed * dt))
 
@@ -5780,17 +6013,17 @@ local function updateRenderStep(dt: number)
 	local adsTargetCFrame = ADS_EYE_RELIEF * aimToRoot
 	local baseOffset = HIP_OFFSET:Lerp(adsTargetCFrame, adsAlpha)
 
-	-- 5. Combine procedural springs, recoil, and roll
+	-- 6. Combine procedural springs, 3D positional + rotational recoil, reload offset, and roll
 	local proceduralTranslation = Vector3.new(
-		swayPos.X + bobX,
-		swayPos.Y + bobY + landingOffset.Y + (recoilOffset.Y * 0.12),
-		recoilOffset.Z
+		swayPos.X + bobX + recoilPos.X,
+		swayPos.Y + bobY + landingOffset.Y + recoilPos.Y + reloadOffsetY,
+		recoilPos.Z
 	)
 
 	local proceduralRotation = CFrame.Angles(
-		recoilOffset.X + (landingOffset.Y * 0.35) - (swayPos.Y * 0.8),
-		-swayPos.X * 1.1 + (recoilOffset.Y * 0.25),
-		currentRollRad - (swayPos.X * 1.4)
+		recoilRot.X + (landingOffset.Y * 0.35) - (swayPos.Y * 0.8),
+		recoilRot.Y - (swayPos.X * 1.1),
+		currentRollRad + recoilRot.Z + reloadTiltZ - (swayPos.X * 1.4)
 	)
 
 	currentRoot.CFrame = camera.CFrame * baseOffset * CFrame.new(proceduralTranslation) * proceduralRotation
@@ -5798,6 +6031,9 @@ end
 
 function ViewmodelController.EquipWeaponViewmodel(weaponId: string)
 	currentWeaponId = weaponId
+	isProceduralReloading = false
+	reloadElapsed = 0
+	currentReloadAlpha = 0
 
 	if activeViewmodel then
 		AnimatorBridge.StopAll()
@@ -5824,9 +6060,45 @@ function ViewmodelController.EquipWeaponViewmodel(weaponId: string)
 	AnimatorBridge.PlayTrack("Idle")
 end
 
-function ViewmodelController.ApplyRecoilImpulse(kick: Vector3)
+ViewmodelController.EquipWeapon = ViewmodelController.EquipWeaponViewmodel
+ViewmodelController.SwitchWeapon = ViewmodelController.EquipWeaponViewmodel
+
+function ViewmodelController.ApplyRecoilImpulse(kickPos: Vector3, kickRot: Vector3?)
 	local adsMultiplier = if isADSState then 0.65 else 1.0
-	recoilSpring:Impulse(kick * adsMultiplier)
+	local resolvedRot = kickRot
+	if not resolvedRot then
+		local wConfig = getWeaponConfig(currentWeaponId)
+		if type(wConfig) == "table" and typeof(wConfig.RecoilKickRot) == "Vector3" then
+			resolvedRot = wConfig.RecoilKickRot
+		else
+			resolvedRot = Vector3.new(
+				math.abs(kickPos.Y) * 1.4 + math.abs(kickPos.Z) * 0.6,
+				kickPos.X * 0.5,
+				kickPos.X * 0.35
+			)
+		end
+	end
+
+	recoilPosSpring:Impulse(kickPos * adsMultiplier)
+	recoilRotSpring:Impulse((resolvedRot :: Vector3) * adsMultiplier)
+end
+
+function ViewmodelController.PlayFireAnimation()
+	AnimatorBridge.PlayTrack("Fire")
+end
+
+function ViewmodelController.PlayReloadAnimation(duration: number)
+	local resolvedDuration = if type(duration) == "number" and duration > 0 then duration else 1.5
+	local trackPlayed = AnimatorBridge.PlayTrack("Reload")
+	if not trackPlayed then
+		isProceduralReloading = true
+		reloadElapsed = 0
+		reloadDuration = resolvedDuration
+	end
+end
+
+function ViewmodelController.GetMuzzleAttachment(): Attachment?
+	return muzzleAttachment
 end
 
 function ViewmodelController.GetMuzzleWorldPosition(): Vector3?
@@ -6356,6 +6628,330 @@ HitboxHistory.Init()
 CombatValidator.Init()
 StanceReplicator.Init()
 MatchService.Init()
+````
+
+## File: src/shared/math/QuakeMath.luau
+````
+--!strict
+--[[
+	QuakeMath.luau
+	Pure vector math library implementing Quake III / Source Engine air-strafe
+	dot-product velocity projection, ground friction decay, and planar speed clamping.
+]]
+
+local STOP_SPEED_DEFAULT = 10
+
+local QuakeMath = {}
+
+--[[
+	Projects currentVel onto wishDir and adds acceleration up to wishSpeed.
+	Because projection uses the dot product (currentVel:Dot(wishDir)), strafing
+	nearly perpendicular to currentVel yields a small currentSpeed projection,
+	allowing total planar speed to exceed wishSpeed during air-strafing.
+]]
+function QuakeMath.Accelerate(
+	currentVel: Vector3,
+	wishDir: Vector3,
+	wishSpeed: number,
+	accel: number,
+	dt: number
+): Vector3
+	local planarWish = Vector3.new(wishDir.X, 0, wishDir.Z)
+	if planarWish.Magnitude <= 1e-6 or wishSpeed <= 0 or dt <= 0 then
+		return currentVel
+	end
+	local unitWish = planarWish.Unit
+
+	local currentSpeed = currentVel:Dot(unitWish)
+	local addSpeed = wishSpeed - currentSpeed
+	if addSpeed <= 0 then
+		return currentVel
+	end
+
+	local accelSpeed = accel * dt * wishSpeed
+	if accelSpeed > addSpeed then
+		accelSpeed = addSpeed
+	end
+
+	return currentVel + (unitWish * accelSpeed)
+end
+
+--[[
+	Applies Quake/Source ground friction to the horizontal (XZ) components of currentVel
+	while preserving vertical (Y) velocity.
+]]
+function QuakeMath.ApplyFriction(
+	currentVel: Vector3,
+	friction: number,
+	dt: number,
+	stopSpeed: number?
+): Vector3
+	local planarVel = Vector3.new(currentVel.X, 0, currentVel.Z)
+	local speed = planarVel.Magnitude
+	if speed <= 1e-5 or dt <= 0 or friction <= 0 then
+		return Vector3.new(0, currentVel.Y, 0)
+	end
+
+	local effectiveStopSpeed = stopSpeed or STOP_SPEED_DEFAULT
+	local control = if speed < effectiveStopSpeed then effectiveStopSpeed else speed
+	local drop = control * friction * dt
+
+	local newSpeed = speed - drop
+	if newSpeed < 0 then
+		newSpeed = 0
+	end
+
+	local scale = newSpeed / speed
+	return Vector3.new(currentVel.X * scale, currentVel.Y, currentVel.Z * scale)
+end
+
+--[[
+	Hard-clamps horizontal (XZ) speed to maxSpeed while preserving vertical (Y) velocity.
+]]
+function QuakeMath.ClampPlanarSpeed(vel: Vector3, maxSpeed: number): Vector3
+	if maxSpeed <= 0 then
+		return Vector3.new(0, vel.Y, 0)
+	end
+
+	local planarVel = Vector3.new(vel.X, 0, vel.Z)
+	local planarSpeed = planarVel.Magnitude
+	if planarSpeed <= maxSpeed or planarSpeed <= 1e-6 then
+		return vel
+	end
+
+	local clampedPlanar = planarVel.Unit * maxSpeed
+	return Vector3.new(clampedPlanar.X, vel.Y, clampedPlanar.Z)
+end
+
+return table.freeze(QuakeMath)
+````
+
+## File: src/shared/math/Spring.luau
+````
+--!strict
+--[[
+	Spring.luau
+	3D Hooke's Law damped harmonic oscillator with 8 fixed substeps per update.
+	Used for procedural viewmodel sway, recoil kick, landing bob, and camera tilt.
+]]
+
+local ITERATIONS = 8
+
+local Spring = {}
+Spring.__index = Spring
+
+export type Spring = typeof(setmetatable(
+	{} :: {
+		Target: Vector3,
+		Position: Vector3,
+		Velocity: Vector3,
+		Mass: number,
+		Force: number,
+		Damping: number,
+		Speed: number,
+	},
+	Spring
+))
+
+function Spring.new(mass: number?, force: number?, damping: number?, speed: number?): Spring
+	local self = setmetatable({
+		Target = Vector3.zero,
+		Position = Vector3.zero,
+		Velocity = Vector3.zero,
+		Mass = mass or 5,
+		Force = force or 50,
+		Damping = damping or 4,
+		Speed = speed or 4,
+	}, Spring)
+
+	return self
+end
+
+function Spring.Shove(self: Spring, impulse: Vector3): ()
+	local x = impulse.X
+	local y = impulse.Y
+	local z = impulse.Z
+
+	if x ~= x or x == math.huge or x == -math.huge then
+		x = 0
+	end
+	if y ~= y or y == math.huge or y == -math.huge then
+		y = 0
+	end
+	if z ~= z or z == math.huge or z == -math.huge then
+		z = 0
+	end
+
+	self.Velocity += Vector3.new(x, y, z)
+end
+
+function Spring.Update(self: Spring, dt: number): Vector3
+	local scaledDeltaTime = math.min(dt, 0.1) * self.Speed / ITERATIONS
+	local mass = math.max(self.Mass, 1e-4)
+	local force = self.Force
+	local damping = self.Damping
+	local target = self.Target
+	local position = self.Position
+	local velocity = self.Velocity
+
+	for _ = 1, ITERATIONS do
+		local displacement = target - position
+		local acceleration = (displacement * force) / mass - velocity * damping
+
+		velocity += acceleration * scaledDeltaTime
+		position += velocity * scaledDeltaTime
+	end
+
+	self.Position = position
+	self.Velocity = velocity
+
+	return position
+end
+
+function Spring.Reset(self: Spring): ()
+	self.Target = Vector3.zero
+	self.Position = Vector3.zero
+	self.Velocity = Vector3.zero
+end
+
+return table.freeze(Spring)
+````
+
+## File: asphalt.toml
+````toml
+[creator]
+type = "user"
+id = 0
+
+[codegen]
+style = "nested"
+typescript = false
+strip_extension = true
+
+[inputs.audio]
+path = "assets/audio/**/*"
+output_path = "src/shared/configs"
+
+[inputs.ui_sprites]
+path = "assets/ui_sprites/**/*"
+output_path = "src/shared/configs"
+````
+
+## File: default.project.json
+````json
+{
+  "name": "scifi-bhop-fps",
+  "globIgnorePaths": [
+    "**/.gitkeep",
+    "**/*.blend",
+    "**/*.fbx",
+    "**/*.psd"
+  ],
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "Shared": {
+        "$path": "src/shared"
+      },
+      "Packages": {
+        "$className": "Folder",
+        "$ignoreUnknownInstances": true
+      },
+      "Animations": {
+        "$className": "Folder",
+        "Registry": {
+          "$path": "animations/registry"
+        },
+        "Exported": {
+          "$className": "Folder",
+          "Character3P": {
+            "$path": "animations/exported_rbxm/character_3p"
+          },
+          "Viewmodel": {
+            "$path": "animations/exported_rbxm/viewmodel"
+          }
+        }
+      },
+      "Assets": {
+        "$className": "Folder",
+        "Audio": {
+          "$path": "assets/audio"
+        },
+        "Models": {
+          "$className": "Folder",
+          "Characters": {
+            "$path": "assets/models/characters"
+          },
+          "Viewmodels": {
+            "$path": "assets/models/viewmodels"
+          },
+          "Worldmodels": {
+            "$path": "assets/models/worldmodels"
+          }
+        },
+        "UISprites": {
+          "$path": "assets/ui_sprites"
+        }
+      },
+      "Graphics": {
+        "$className": "Folder",
+        "Materials": {
+          "$path": "graphics/materials"
+        },
+        "Presets": {
+          "$path": "graphics/presets"
+        },
+        "VFXPrefabs": {
+          "$path": "graphics/vfx_prefabs"
+        }
+      }
+    },
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "Server": {
+        "$path": "src/server"
+      }
+    },
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "Client": {
+          "$path": "src/client"
+        }
+      }
+    }
+  }
+}
+````
+
+## File: rokit.toml
+````toml
+# This file lists tools managed by Rokit, a toolchain manager for Roblox projects.
+# For more information, see https://github.com/rojo-rbx/rokit
+
+[tools]
+rojo = "rojo-rbx/rojo@7.4.4"
+wally = "UpliftGames/wally@0.3.2"
+stylua = "JohnnyMorganz/StyLua@0.20.0"
+selene = "Kampfkarren/selene@0.27.1"
+````
+
+## File: wally.toml
+````toml
+[package]
+name = "scifi-bhop/scifi-bhop-fps"
+description = "Competitive Sci-Fi Bunny-Hop Arena FPS"
+version = "0.1.0"
+license = "MIT"
+authors = ["SciFi Bhop Team"]
+registry = "https://github.com/UpliftGames/wally-index"
+realm = "shared"
+
+[dependencies]
+Trove = "sleitnick/trove@1.3.0"
+Signal = "sleitnick/signal@2.0.1"
 ````
 
 ## File: src/shared/configs/AssetRegistry.luau
@@ -7033,193 +7629,6 @@ local WeaponData = {
 return table.freeze(WeaponData)
 ````
 
-## File: src/shared/math/QuakeMath.luau
-````
---!strict
---[[
-	QuakeMath.luau
-	Pure vector math library implementing Quake III / Source Engine air-strafe
-	dot-product velocity projection, ground friction decay, and planar speed clamping.
-]]
-
-local STOP_SPEED_DEFAULT = 10
-
-local QuakeMath = {}
-
---[[
-	Projects currentVel onto wishDir and adds acceleration up to wishSpeed.
-	Because projection uses the dot product (currentVel:Dot(wishDir)), strafing
-	nearly perpendicular to currentVel yields a small currentSpeed projection,
-	allowing total planar speed to exceed wishSpeed during air-strafing.
-]]
-function QuakeMath.Accelerate(
-	currentVel: Vector3,
-	wishDir: Vector3,
-	wishSpeed: number,
-	accel: number,
-	dt: number
-): Vector3
-	local planarWish = Vector3.new(wishDir.X, 0, wishDir.Z)
-	if planarWish.Magnitude <= 1e-6 or wishSpeed <= 0 or dt <= 0 then
-		return currentVel
-	end
-	local unitWish = planarWish.Unit
-
-	local currentSpeed = currentVel:Dot(unitWish)
-	local addSpeed = wishSpeed - currentSpeed
-	if addSpeed <= 0 then
-		return currentVel
-	end
-
-	local accelSpeed = accel * dt * wishSpeed
-	if accelSpeed > addSpeed then
-		accelSpeed = addSpeed
-	end
-
-	return currentVel + (unitWish * accelSpeed)
-end
-
---[[
-	Applies Quake/Source ground friction to the horizontal (XZ) components of currentVel
-	while preserving vertical (Y) velocity.
-]]
-function QuakeMath.ApplyFriction(
-	currentVel: Vector3,
-	friction: number,
-	dt: number,
-	stopSpeed: number?
-): Vector3
-	local planarVel = Vector3.new(currentVel.X, 0, currentVel.Z)
-	local speed = planarVel.Magnitude
-	if speed <= 1e-5 or dt <= 0 or friction <= 0 then
-		return Vector3.new(0, currentVel.Y, 0)
-	end
-
-	local effectiveStopSpeed = stopSpeed or STOP_SPEED_DEFAULT
-	local control = if speed < effectiveStopSpeed then effectiveStopSpeed else speed
-	local drop = control * friction * dt
-
-	local newSpeed = speed - drop
-	if newSpeed < 0 then
-		newSpeed = 0
-	end
-
-	local scale = newSpeed / speed
-	return Vector3.new(currentVel.X * scale, currentVel.Y, currentVel.Z * scale)
-end
-
---[[
-	Hard-clamps horizontal (XZ) speed to maxSpeed while preserving vertical (Y) velocity.
-]]
-function QuakeMath.ClampPlanarSpeed(vel: Vector3, maxSpeed: number): Vector3
-	if maxSpeed <= 0 then
-		return Vector3.new(0, vel.Y, 0)
-	end
-
-	local planarVel = Vector3.new(vel.X, 0, vel.Z)
-	local planarSpeed = planarVel.Magnitude
-	if planarSpeed <= maxSpeed or planarSpeed <= 1e-6 then
-		return vel
-	end
-
-	local clampedPlanar = planarVel.Unit * maxSpeed
-	return Vector3.new(clampedPlanar.X, vel.Y, clampedPlanar.Z)
-end
-
-return table.freeze(QuakeMath)
-````
-
-## File: src/shared/math/Spring.luau
-````
---!strict
---[[
-	Spring.luau
-	3D Hooke's Law damped harmonic oscillator with 8 fixed substeps per update.
-	Used for procedural viewmodel sway, recoil kick, landing bob, and camera tilt.
-]]
-
-local ITERATIONS = 8
-
-local Spring = {}
-Spring.__index = Spring
-
-export type Spring = typeof(setmetatable(
-	{} :: {
-		Target: Vector3,
-		Position: Vector3,
-		Velocity: Vector3,
-		Mass: number,
-		Force: number,
-		Damping: number,
-		Speed: number,
-	},
-	Spring
-))
-
-function Spring.new(mass: number?, force: number?, damping: number?, speed: number?): Spring
-	local self = setmetatable({
-		Target = Vector3.zero,
-		Position = Vector3.zero,
-		Velocity = Vector3.zero,
-		Mass = mass or 5,
-		Force = force or 50,
-		Damping = damping or 4,
-		Speed = speed or 4,
-	}, Spring)
-
-	return self
-end
-
-function Spring.Shove(self: Spring, impulse: Vector3): ()
-	local x = impulse.X
-	local y = impulse.Y
-	local z = impulse.Z
-
-	if x ~= x or x == math.huge or x == -math.huge then
-		x = 0
-	end
-	if y ~= y or y == math.huge or y == -math.huge then
-		y = 0
-	end
-	if z ~= z or z == math.huge or z == -math.huge then
-		z = 0
-	end
-
-	self.Velocity += Vector3.new(x, y, z)
-end
-
-function Spring.Update(self: Spring, dt: number): Vector3
-	local scaledDeltaTime = math.min(dt, 0.1) * self.Speed / ITERATIONS
-	local mass = math.max(self.Mass, 1e-4)
-	local force = self.Force
-	local damping = self.Damping
-	local target = self.Target
-	local position = self.Position
-	local velocity = self.Velocity
-
-	for _ = 1, ITERATIONS do
-		local displacement = target - position
-		local acceleration = (displacement * force) / mass - velocity * damping
-
-		velocity += acceleration * scaledDeltaTime
-		position += velocity * scaledDeltaTime
-	end
-
-	self.Position = position
-	self.Velocity = velocity
-
-	return position
-end
-
-function Spring.Reset(self: Spring): ()
-	self.Target = Vector3.zero
-	self.Position = Vector3.zero
-	self.Velocity = Vector3.zero
-end
-
-return table.freeze(Spring)
-````
-
 ## File: src/shared/network/ShotPacket.luau
 ````
 --!strict
@@ -7385,141 +7794,4 @@ function ShotPacket.DecodeTable(buf: buffer): DecodedShotPacket?
 end
 
 return table.freeze(ShotPacket)
-````
-
-## File: asphalt.toml
-````toml
-[creator]
-type = "user"
-id = 0
-
-[codegen]
-style = "nested"
-typescript = false
-strip_extension = true
-
-[inputs.audio]
-path = "assets/audio/**/*"
-output_path = "src/shared/configs"
-
-[inputs.ui_sprites]
-path = "assets/ui_sprites/**/*"
-output_path = "src/shared/configs"
-````
-
-## File: default.project.json
-````json
-{
-  "name": "scifi-bhop-fps",
-  "globIgnorePaths": [
-    "**/.gitkeep",
-    "**/*.blend",
-    "**/*.fbx",
-    "**/*.psd"
-  ],
-  "tree": {
-    "$className": "DataModel",
-    "ReplicatedStorage": {
-      "$className": "ReplicatedStorage",
-      "Shared": {
-        "$path": "src/shared"
-      },
-      "Packages": {
-        "$className": "Folder",
-        "$ignoreUnknownInstances": true
-      },
-      "Animations": {
-        "$className": "Folder",
-        "Registry": {
-          "$path": "animations/registry"
-        },
-        "Exported": {
-          "$className": "Folder",
-          "Character3P": {
-            "$path": "animations/exported_rbxm/character_3p"
-          },
-          "Viewmodel": {
-            "$path": "animations/exported_rbxm/viewmodel"
-          }
-        }
-      },
-      "Assets": {
-        "$className": "Folder",
-        "Audio": {
-          "$path": "assets/audio"
-        },
-        "Models": {
-          "$className": "Folder",
-          "Characters": {
-            "$path": "assets/models/characters"
-          },
-          "Viewmodels": {
-            "$path": "assets/models/viewmodels"
-          },
-          "Worldmodels": {
-            "$path": "assets/models/worldmodels"
-          }
-        },
-        "UISprites": {
-          "$path": "assets/ui_sprites"
-        }
-      },
-      "Graphics": {
-        "$className": "Folder",
-        "Materials": {
-          "$path": "graphics/materials"
-        },
-        "Presets": {
-          "$path": "graphics/presets"
-        },
-        "VFXPrefabs": {
-          "$path": "graphics/vfx_prefabs"
-        }
-      }
-    },
-    "ServerScriptService": {
-      "$className": "ServerScriptService",
-      "Server": {
-        "$path": "src/server"
-      }
-    },
-    "StarterPlayer": {
-      "$className": "StarterPlayer",
-      "StarterPlayerScripts": {
-        "$className": "StarterPlayerScripts",
-        "Client": {
-          "$path": "src/client"
-        }
-      }
-    }
-  }
-}
-````
-
-## File: rokit.toml
-````toml
-# This file lists tools managed by Rokit, a toolchain manager for Roblox projects.
-# For more information, see https://github.com/rojo-rbx/rokit
-
-[tools]
-rojo = "rojo-rbx/rojo@7.4.4"
-wally = "UpliftGames/wally@0.3.2"
-stylua = "JohnnyMorganz/StyLua@0.20.0"
-selene = "Kampfkarren/selene@0.27.1"
-````
-
-## File: wally.toml
-````toml
-[package]
-name = "scifi-bhop/scifi-bhop-fps"
-description = "Competitive Sci-Fi Bunny-Hop Arena FPS"
-version = "0.1.0"
-license = "MIT"
-authors = ["SciFi Bhop Team"]
-registry = "https://github.com/UpliftGames/wally-index"
-realm = "shared"
-
-[dependencies]
-Trove = "sleitnick/trove@1.3.0"
-Signal = "sleitnick/signal@2.0.1"
 ````
