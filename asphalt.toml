@@ -1,1 +1,11 @@
-# Asphalt config — auto-uploads PNG/OGG assets to Roblox Cloud IDs
+[codegen]
+style = "nested"
+typescript = false
+
+[inputs.audio]
+path = "assets/audio/**/*"
+output_path = "src/shared/configs"
+
+[inputs.ui_sprites]
+path = "assets/ui_sprites/**/*"
+output_path = "src/shared/configs"

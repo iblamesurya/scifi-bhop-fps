@@ -1,0 +1,17 @@
+# Force LF for all code and config files
+*.luau text eol=lf
+*.json text eol=lf
+*.toml text eol=lf
+*.md text eol=lf
+*.rbxmx text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+
+# Protect binary Roblox models, Blender files, audio, and sprites from corruption
+*.rbxm binary
+*.rbxl binary
+*.blend binary
+*.fbx binary
+*.ogg binary
+*.png binary
+*.wav binary

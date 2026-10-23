@@ -1,1 +1,9 @@
-# Wally package manifest — declares dependencies (Trove, Signal)
+[package]
+name = "studio/scifi-bhop-fps"
+version = "0.1.0"
+registry = "https://github.com/UpliftGames/wally-index"
+realm = "shared"
+
+[dependencies]
+Trove = "sleitnick/trove@1.1.0"
+Signal = "sleitnick/signal@2.0.0"

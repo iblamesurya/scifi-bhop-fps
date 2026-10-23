@@ -1,1 +1,69 @@
-// Master Rojo 7 project file — maps all 4 pillars (assets, animations, graphics, src) into the DataModel
+{
+	"name": "SciFiBhopFPS",
+	"globIgnorePaths": [
+		"**/.gitkeep",
+		"**/*.blend",
+		"**/*.fbx",
+		"**/*.psd"
+	],
+	"tree": {
+		"$className": "DataModel",
+		"ReplicatedStorage": {
+			"$className": "ReplicatedStorage",
+			"Shared": {
+				"$path": "src/shared"
+			},
+			"Animations": {
+				"$path": "animations/registry"
+			},
+			"Assets": {
+				"$className": "Folder",
+				"Models": {
+					"$className": "Folder",
+					"viewmodels": {
+						"$path": "assets/models/viewmodels"
+					},
+					"worldmodels": {
+						"$path": "assets/models/worldmodels"
+					},
+					"characters": {
+						"$path": "assets/models/characters"
+					}
+				}
+			},
+			"Graphics": {
+				"$className": "Folder",
+				"VFX": {
+					"$path": "graphics/vfx_prefabs"
+				},
+				"Presets": {
+					"$path": "graphics/presets"
+				}
+			},
+			"Packages": {
+				"$path": "Packages"
+			}
+		},
+		"ServerScriptService": {
+			"$className": "ServerScriptService",
+			"Server": {
+				"$path": "src/server"
+			}
+		},
+		"StarterPlayer": {
+			"$className": "StarterPlayer",
+			"StarterPlayerScripts": {
+				"$className": "StarterPlayerScripts",
+				"Client": {
+					"$path": "src/client"
+				}
+			}
+		},
+		"MaterialService": {
+			"$className": "MaterialService",
+			"CustomMaterials": {
+				"$path": "graphics/materials"
+			}
+		}
+	}
+}
