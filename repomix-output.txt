@@ -1215,352 +1215,53 @@ return table.freeze(MatchService)
 ## File: src/shared/configs/MapConfig.luau
 ````
 --!strict
+--[[
+	MapConfig.luau
+	Read-only arena map bounds, spawn points, jump pads, and bhop ramp surface parameters.
+]]
 
-export type PadData = {
+export type JumpPadSpec = {
 	Position: Vector3,
 	Size: Vector3,
-	TrimColor: Color3,
+	LaunchVelocity: Vector3,
 }
 
-export type StrafeWallData = {
-	CFrame: CFrame,
-	Size: Vector3,
-	TrimColor: Color3,
+export type MapConfigType = {
+	MapName: string,
+	KillPlaneY: number,
+	RespawnDelay: number,
+	SpawnLocations: { CFrame },
+	JumpPads: { JumpPadSpec },
 }
 
-export type SlideTunnelData = {
-	Name: string,
-	FloorCenter: Vector3,
-	Width: number,
-	Length: number,
-	Clearance: number,
-	RoofThickness: number,
-	WallThickness: number,
-	RotationY: number,
-	TrimColor: Color3,
-}
+local SpawnLocations: { CFrame } = table.freeze({
+	CFrame.new(-80, 6, -80) * CFrame.Angles(0, math.rad(-45), 0),
+	CFrame.new(80, 6, -80) * CFrame.Angles(0, math.rad(45), 0),
+	CFrame.new(-80, 6, 80) * CFrame.Angles(0, math.rad(-135), 0),
+	CFrame.new(80, 6, 80) * CFrame.Angles(0, math.rad(135), 0),
+	CFrame.new(0, 18, -110) * CFrame.Angles(0, 0, 0),
+	CFrame.new(0, 18, 110) * CFrame.Angles(0, math.rad(180), 0),
+})
 
-export type DeckData = {
-	Name: string,
-	Center: Vector3,
-	Size: Vector3,
-	RampStart: Vector3,
-	RampEnd: Vector3,
-	RampWidth: number,
-	TrimColor: Color3,
-}
+local JumpPads: { JumpPadSpec } = table.freeze({
+	table.freeze({
+		Position = Vector3.new(-48, 1.5, 0),
+		Size = Vector3.new(10, 1, 10),
+		LaunchVelocity = Vector3.new(38, 68, 0),
+	}),
+	table.freeze({
+		Position = Vector3.new(48, 1.5, 0),
+		Size = Vector3.new(10, 1, 10),
+		LaunchVelocity = Vector3.new(-38, 68, 0),
+	}),
+})
 
-local CYAN_NEON = Color3.fromHex("#00F0FF")
-local ORANGE_NEON = Color3.fromHex("#FF6E00")
-
-local MapConfig = {
-	ArenaName = "SciFiArena",
-
-	Colors = {
-		CyanNeon = CYAN_NEON,
-		OrangeNeon = ORANGE_NEON,
-		BaseFloor = Color3.fromRGB(14, 17, 24),
-		PrimaryStructure = Color3.fromRGB(22, 26, 36),
-		SecondaryStructure = Color3.fromRGB(32, 38, 52),
-		SniperDeckSurface = Color3.fromRGB(26, 30, 42),
-		LobbyGlass = Color3.fromRGB(120, 215, 255),
-	},
-
-	Dimensions = {
-		ArenaWidth = 260,
-		ArenaLength = 420,
-		ArenaWallHeight = 64,
-		FloorThickness = 4,
-		WallThickness = 4,
-		SlideClearance = 3.2, -- Strictly under 3.5 studs clearance to reward sliding
-	},
-
-	Lobby = {
-		Center = Vector3.new(0, 120, 0),
-		Size = Vector3.new(64, 22, 64),
-		GlassTransparency = 0.65,
-		SpawnCFrame = CFrame.lookAt(Vector3.new(0, 113, 20), Vector3.new(0, 113, -20)),
-	},
-
-	-- Symmetrical North/South Team & FFA Spawn Decks + Flank Spawns
-	ArenaSpawns = {
-		-- North Spawn Deck (Team Alpha / FFA)
-		CFrame.lookAt(Vector3.new(0, 13, -184), Vector3.new(0, 13, 0)),
-		CFrame.lookAt(Vector3.new(-22, 13, -180), Vector3.new(0, 13, 0)),
-		CFrame.lookAt(Vector3.new(22, 13, -180), Vector3.new(0, 13, 0)),
-		CFrame.lookAt(Vector3.new(-42, 5, -150), Vector3.new(0, 5, 0)),
-		CFrame.lookAt(Vector3.new(42, 5, -150), Vector3.new(0, 5, 0)),
-
-		-- South Spawn Deck (Team Omega / FFA)
-		CFrame.lookAt(Vector3.new(0, 13, 184), Vector3.new(0, 13, 0)),
-		CFrame.lookAt(Vector3.new(-22, 13, 180), Vector3.new(0, 13, 0)),
-		CFrame.lookAt(Vector3.new(22, 13, 180), Vector3.new(0, 13, 0)),
-		CFrame.lookAt(Vector3.new(-42, 5, 150), Vector3.new(0, 5, 0)),
-		CFrame.lookAt(Vector3.new(42, 5, 150), Vector3.new(0, 5, 0)),
-
-		-- Mid Wing FFA Spawns
-		CFrame.lookAt(Vector3.new(-102, 5, 0), Vector3.new(0, 5, 0)),
-		CFrame.lookAt(Vector3.new(102, 5, 0), Vector3.new(0, 5, 0)),
-	},
-
-	-- Symmetrical Team/FFA Spawn Decks
-	SpawnDecks = {
-		{
-			Name = "NorthSpawnDeck",
-			Center = Vector3.new(0, 4, -180),
-			Size = Vector3.new(84, 8, 44),
-			RampStart = Vector3.new(0, 0, -142),
-			RampEnd = Vector3.new(0, 8, -158),
-			RampWidth = 28,
-			TrimColor = CYAN_NEON,
-		},
-		{
-			Name = "SouthSpawnDeck",
-			Center = Vector3.new(0, 4, 180),
-			Size = Vector3.new(84, 8, 44),
-			RampStart = Vector3.new(0, 0, 142),
-			RampEnd = Vector3.new(0, 8, 158),
-			RampWidth = 28,
-			TrimColor = ORANGE_NEON,
-		},
-	} :: { DeckData },
-
-	-- Elevated High-Ground Sniper Decks with long HELIOS_RAIL sightlines (370+ studs)
-	SniperDecks = {
-		{
-			Name = "NorthHeliosSniperDeck",
-			Center = Vector3.new(0, 22, -196),
-			Size = Vector3.new(68, 2, 22),
-			RampStart = Vector3.new(-36, 8, -172),
-			RampEnd = Vector3.new(-36, 22, -192),
-			RampWidth = 10,
-			TrimColor = CYAN_NEON,
-		},
-		{
-			Name = "SouthHeliosSniperDeck",
-			Center = Vector3.new(0, 22, 196),
-			Size = Vector3.new(68, 2, 22),
-			RampStart = Vector3.new(36, 8, 172),
-			RampEnd = Vector3.new(36, 22, 192),
-			RampWidth = 10,
-			TrimColor = ORANGE_NEON,
-		},
-		{
-			Name = "WestOverwatchDeck",
-			Center = Vector3.new(-112, 18, 0),
-			Size = Vector3.new(20, 2, 76),
-			RampStart = Vector3.new(-112, 0, -64),
-			RampEnd = Vector3.new(-112, 18, -38),
-			RampWidth = 10,
-			TrimColor = CYAN_NEON,
-		},
-		{
-			Name = "EastOverwatchDeck",
-			Center = Vector3.new(112, 18, 0),
-			Size = Vector3.new(20, 2, 76),
-			RampStart = Vector3.new(112, 0, 64),
-			RampEnd = Vector3.new(112, 18, 38),
-			RampWidth = 10,
-			TrimColor = ORANGE_NEON,
-		},
-	} :: { DeckData },
-
-	-- Central B-Hop Speedway with spaced momentum stepping stones
-	BhopPads = {
-		{ Position = Vector3.new(0, 0.75, -116), Size = Vector3.new(14, 1.5, 16), TrimColor = CYAN_NEON },
-		{ Position = Vector3.new(-9, 1.0, -88), Size = Vector3.new(13, 2.0, 15), TrimColor = CYAN_NEON },
-		{ Position = Vector3.new(9, 1.25, -60), Size = Vector3.new(13, 2.5, 15), TrimColor = CYAN_NEON },
-		{ Position = Vector3.new(-10, 1.5, -30), Size = Vector3.new(13, 3.0, 15), TrimColor = ORANGE_NEON },
-		{ Position = Vector3.new(0, 1.75, 0), Size = Vector3.new(18, 3.5, 18), TrimColor = ORANGE_NEON },
-		{ Position = Vector3.new(10, 1.5, 30), Size = Vector3.new(13, 3.0, 15), TrimColor = ORANGE_NEON },
-		{ Position = Vector3.new(-9, 1.25, 60), Size = Vector3.new(13, 2.5, 15), TrimColor = CYAN_NEON },
-		{ Position = Vector3.new(9, 1.0, 88), Size = Vector3.new(13, 2.0, 15), TrimColor = CYAN_NEON },
-		{ Position = Vector3.new(0, 0.75, 116), Size = Vector3.new(14, 1.5, 16), TrimColor = CYAN_NEON },
-
-		-- Outer High-Velocity B-Hop Chain Stones
-		{ Position = Vector3.new(-52, 1.0, -84), Size = Vector3.new(12, 2, 14), TrimColor = CYAN_NEON },
-		{ Position = Vector3.new(-58, 1.5, -42), Size = Vector3.new(12, 3, 14), TrimColor = ORANGE_NEON },
-		{ Position = Vector3.new(-58, 1.5, 42), Size = Vector3.new(12, 3, 14), TrimColor = ORANGE_NEON },
-		{ Position = Vector3.new(-52, 1.0, 84), Size = Vector3.new(12, 2, 14), TrimColor = CYAN_NEON },
-
-		{ Position = Vector3.new(52, 1.0, -84), Size = Vector3.new(12, 2, 14), TrimColor = CYAN_NEON },
-		{ Position = Vector3.new(58, 1.5, -42), Size = Vector3.new(12, 3, 14), TrimColor = ORANGE_NEON },
-		{ Position = Vector3.new(58, 1.5, 42), Size = Vector3.new(12, 3, 14), TrimColor = ORANGE_NEON },
-		{ Position = Vector3.new(52, 1.0, 84), Size = Vector3.new(12, 2, 14), TrimColor = CYAN_NEON },
-	} :: { PadData },
-
-	-- 45-Degree Air-Strafe Curved Corridors & Angled Surf/Strafe Walls
-	StrafeWalls = {
-		-- Central Spine 45-Degree Surf Prism Ramps
-		{
-			CFrame = CFrame.new(-28, 6, 0) * CFrame.Angles(0, 0, math.rad(-45)),
-			Size = Vector3.new(4, 22, 64),
-			TrimColor = CYAN_NEON,
-		},
-		{
-			CFrame = CFrame.new(28, 6, 0) * CFrame.Angles(0, 0, math.rad(45)),
-			Size = Vector3.new(4, 22, 64),
-			TrimColor = ORANGE_NEON,
-		},
-
-		-- West Wing 45-Degree Air-Strafe Curved Corridor Segments
-		{
-			CFrame = CFrame.new(-88, 10, -108) * CFrame.Angles(0, math.rad(30), math.rad(-45)),
-			Size = Vector3.new(4, 26, 48),
-			TrimColor = CYAN_NEON,
-		},
-		{
-			CFrame = CFrame.new(-98, 10, -64) * CFrame.Angles(0, math.rad(12), math.rad(-45)),
-			Size = Vector3.new(4, 26, 48),
-			TrimColor = CYAN_NEON,
-		},
-		{
-			CFrame = CFrame.new(-98, 10, 64) * CFrame.Angles(0, math.rad(-12), math.rad(-45)),
-			Size = Vector3.new(4, 26, 48),
-			TrimColor = ORANGE_NEON,
-		},
-		{
-			CFrame = CFrame.new(-88, 10, 108) * CFrame.Angles(0, math.rad(-30), math.rad(-45)),
-			Size = Vector3.new(4, 26, 48),
-			TrimColor = ORANGE_NEON,
-		},
-
-		-- East Wing 45-Degree Air-Strafe Curved Corridor Segments
-		{
-			CFrame = CFrame.new(88, 10, -108) * CFrame.Angles(0, math.rad(-30), math.rad(45)),
-			Size = Vector3.new(4, 26, 48),
-			TrimColor = CYAN_NEON,
-		},
-		{
-			CFrame = CFrame.new(98, 10, -64) * CFrame.Angles(0, math.rad(-12), math.rad(45)),
-			Size = Vector3.new(4, 26, 48),
-			TrimColor = CYAN_NEON,
-		},
-		{
-			CFrame = CFrame.new(98, 10, 64) * CFrame.Angles(0, math.rad(12), math.rad(45)),
-			Size = Vector3.new(4, 26, 48),
-			TrimColor = ORANGE_NEON,
-		},
-		{
-			CFrame = CFrame.new(88, 10, 108) * CFrame.Angles(0, math.rad(30), math.rad(45)),
-			Size = Vector3.new(4, 26, 48),
-			TrimColor = ORANGE_NEON,
-		},
-
-		-- 45-Degree Corner Redirect Banking Walls
-		{
-			CFrame = CFrame.new(-96, 12, -162) * CFrame.Angles(0, math.rad(45), 0),
-			Size = Vector3.new(4, 24, 56),
-			TrimColor = CYAN_NEON,
-		},
-		{
-			CFrame = CFrame.new(96, 12, -162) * CFrame.Angles(0, math.rad(-45), 0),
-			Size = Vector3.new(4, 24, 56),
-			TrimColor = CYAN_NEON,
-		},
-		{
-			CFrame = CFrame.new(-96, 12, 162) * CFrame.Angles(0, math.rad(-45), 0),
-			Size = Vector3.new(4, 24, 56),
-			TrimColor = ORANGE_NEON,
-		},
-		{
-			CFrame = CFrame.new(96, 12, 162) * CFrame.Angles(0, math.rad(45), 0),
-			Size = Vector3.new(4, 24, 56),
-			TrimColor = ORANGE_NEON,
-		},
-	} :: { StrafeWallData },
-
-	-- Slide-Tunnels & Slide-Hop Low Barriers (3.2 studs vertical clearance < 3.5 studs)
-	SlideTunnels = {
-		{
-			Name = "NorthSpeedwaySlideGate",
-			FloorCenter = Vector3.new(0, 0, -102),
-			Width = 26,
-			Length = 8,
-			Clearance = 3.2,
-			RoofThickness = 5,
-			WallThickness = 2,
-			RotationY = 0,
-			TrimColor = CYAN_NEON,
-		},
-		{
-			Name = "SouthSpeedwaySlideGate",
-			FloorCenter = Vector3.new(0, 0, 102),
-			Width = 26,
-			Length = 8,
-			Clearance = 3.2,
-			RoofThickness = 5,
-			WallThickness = 2,
-			RotationY = 0,
-			TrimColor = ORANGE_NEON,
-		},
-		{
-			Name = "WestMidSlideTunnel",
-			FloorCenter = Vector3.new(-58, 0, 0),
-			Width = 18,
-			Length = 28,
-			Clearance = 3.2,
-			RoofThickness = 6,
-			WallThickness = 2,
-			RotationY = 0,
-			TrimColor = CYAN_NEON,
-		},
-		{
-			Name = "EastMidSlideTunnel",
-			FloorCenter = Vector3.new(58, 0, 0),
-			Width = 18,
-			Length = 28,
-			Clearance = 3.2,
-			RoofThickness = 6,
-			WallThickness = 2,
-			RotationY = 0,
-			TrimColor = ORANGE_NEON,
-		},
-		{
-			Name = "NorthWestAngledSlideBarrier",
-			FloorCenter = Vector3.new(-44, 0, -122),
-			Width = 20,
-			Length = 6,
-			Clearance = 3.2,
-			RoofThickness = 5,
-			WallThickness = 2,
-			RotationY = -35,
-			TrimColor = CYAN_NEON,
-		},
-		{
-			Name = "NorthEastAngledSlideBarrier",
-			FloorCenter = Vector3.new(44, 0, -122),
-			Width = 20,
-			Length = 6,
-			Clearance = 3.2,
-			RoofThickness = 5,
-			WallThickness = 2,
-			RotationY = 35,
-			TrimColor = CYAN_NEON,
-		},
-		{
-			Name = "SouthWestAngledSlideBarrier",
-			FloorCenter = Vector3.new(-44, 0, 122),
-			Width = 20,
-			Length = 6,
-			Clearance = 3.2,
-			RoofThickness = 5,
-			WallThickness = 2,
-			RotationY = 35,
-			TrimColor = ORANGE_NEON,
-		},
-		{
-			Name = "SouthEastAngledSlideBarrier",
-			FloorCenter = Vector3.new(44, 0, 122),
-			Width = 20,
-			Length = 6,
-			Clearance = 3.2,
-			RoofThickness = 5,
-			WallThickness = 2,
-			RotationY = -35,
-			TrimColor = ORANGE_NEON,
-		},
-	} :: { SlideTunnelData },
+local MapConfig: MapConfigType = {
+	MapName = "Orbital_Bhop_Proving_Grounds",
+	KillPlaneY = -120,
+	RespawnDelay = 2.5,
+	SpawnLocations = SpawnLocations,
+	JumpPads = JumpPads,
 }
 
 return table.freeze(MapConfig)
@@ -6662,9 +6363,9 @@ MatchService.Init()
 --!strict
 --[[
 	AssetRegistry.luau
-	Centralized read-only registry for audio IDs, UI sprite IDs, VFX prefabs, and 3D models.
-	Provides safe procedural dummy fallbacks whenever .rbxm files in ReplicatedStorage.Assets.Models
-	or ReplicatedStorage.Graphics.VFXPrefabs are not yet present.
+	Centralized read-only registry for standardized NetworkEvents, audio IDs, UI sprite IDs,
+	and 3D models. Provides procedural fallback rigs matching ViewmodelController's exact
+	RootPart -> WeaponMotor/WeaponMesh + AimMotor/AimPart + MuzzleAttachment hierarchy.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -6707,6 +6408,8 @@ local UISprites = table.freeze({
 		HitmarkerCross = "rbxassetid://0",
 	}),
 	WeaponIcons = table.freeze({
+		VORTEX_SMG = "rbxassetid://0",
+		HELIOS_RAIL = "rbxassetid://0",
 		PulseRifle = "rbxassetid://0",
 		Railgun = "rbxassetid://0",
 		PlasmaShotgun = "rbxassetid://0",
@@ -6715,68 +6418,109 @@ local UISprites = table.freeze({
 })
 
 local NetworkEvents = table.freeze({
-	ShotFired = "ShotFired",
+	-- Standardized Remote Names
+	FireWeaponBuffer = "FireWeaponBuffer",
+	ReloadWeaponEvent = "ReloadWeaponEvent",
+	HitConfirmEvent = "HitConfirmEvent",
+	StanceSyncBuffer = "StanceSyncBuffer",
+	RequestDeploy = "RequestDeploy",
+
+	-- Legacy Aliases
+	ShotFired = "FireWeaponBuffer",
 	ShotReplicated = "ShotReplicated",
-	HitConfirmed = "HitConfirmed",
-	StanceChanged = "StanceChanged",
+	HitConfirmed = "HitConfirmEvent",
+	StanceChanged = "StanceSyncBuffer",
 	WeaponEquipped = "WeaponEquipped",
-	ReloadRequested = "ReloadRequested",
+	ReloadRequested = "ReloadWeaponEvent",
 })
 
 local function createProceduralViewmodel(name: string): Model
 	local model = Instance.new("Model")
 	model.Name = name
 
+	local isRailgun = name == "HELIOS_RAIL"
+		or name == "RailgunViewmodel"
+		or name == "Railgun"
+
+	local meshSize = if isRailgun then Vector3.new(0.32, 0.42, 2.5) else Vector3.new(0.36, 0.44, 1.75)
+	local sightHeight = if isRailgun then 0.28 else 0.25
+	local accentColor = if isRailgun
+		then Color3.fromRGB(255, 140, 35)
+		else Color3.fromRGB(0, 225, 255)
+
 	local rootPart = Instance.new("Part")
-	rootPart.Name = "HumanoidRootPart"
+	rootPart.Name = "RootPart"
 	rootPart.Size = Vector3.new(0.5, 0.5, 0.5)
 	rootPart.Transparency = 1
-	rootPart.Anchored = true
+	rootPart.Anchored = false
 	rootPart.CanCollide = false
 	rootPart.CanQuery = false
 	rootPart.CanTouch = false
+	rootPart.Massless = true
 	rootPart.Parent = model
 
-	local receiver = Instance.new("Part")
-	receiver.Name = "Receiver"
-	receiver.Size = Vector3.new(0.35, 0.45, 1.8)
-	receiver.Color = Color3.fromRGB(35, 42, 55)
-	receiver.Material = Enum.Material.Metal
-	receiver.Anchored = false
-	receiver.CanCollide = false
-	receiver.CanQuery = false
-	receiver.CanTouch = false
-	receiver.CFrame = rootPart.CFrame * CFrame.new(0.45, -0.4, -1.1)
-	receiver.Parent = model
+	local weaponMesh = Instance.new("Part")
+	weaponMesh.Name = "WeaponMesh"
+	weaponMesh.Size = meshSize
+	weaponMesh.Color = Color3.fromRGB(35, 42, 55)
+	weaponMesh.Material = Enum.Material.Metal
+	weaponMesh.Anchored = false
+	weaponMesh.CanCollide = false
+	weaponMesh.CanQuery = false
+	weaponMesh.CanTouch = false
+	weaponMesh.Massless = true
+	weaponMesh.Parent = model
 
-	local barrel = Instance.new("Part")
-	barrel.Name = "Muzzle"
-	barrel.Size = Vector3.new(0.18, 0.18, 0.8)
-	barrel.Color = Color3.fromRGB(0, 220, 255)
-	barrel.Material = Enum.Material.Neon
-	barrel.Anchored = false
-	barrel.CanCollide = false
-	barrel.CanQuery = false
-	barrel.CanTouch = false
-	barrel.CFrame = receiver.CFrame * CFrame.new(0, 0.1, -1.1)
-	barrel.Parent = model
+	local barrelAccent = Instance.new("Part")
+	barrelAccent.Name = "BarrelAccent"
+	barrelAccent.Size = Vector3.new(meshSize.X * 0.45, meshSize.Y * 0.35, meshSize.Z * 0.85)
+	barrelAccent.Color = accentColor
+	barrelAccent.Material = Enum.Material.Neon
+	barrelAccent.Anchored = false
+	barrelAccent.CanCollide = false
+	barrelAccent.CanQuery = false
+	barrelAccent.CanTouch = false
+	barrelAccent.Massless = true
+	barrelAccent.CFrame = weaponMesh.CFrame * CFrame.new(0, 0.04, -0.08)
+	barrelAccent.Parent = model
+
+	local accentWeld = Instance.new("WeldConstraint")
+	accentWeld.Name = "AccentWeld"
+	accentWeld.Part0 = weaponMesh
+	accentWeld.Part1 = barrelAccent
+	accentWeld.Parent = weaponMesh
+
+	local weaponMotor = Instance.new("Motor6D")
+	weaponMotor.Name = "WeaponMotor"
+	weaponMotor.Part0 = rootPart
+	weaponMotor.Part1 = weaponMesh
+	weaponMotor.C0 = CFrame.identity
+	weaponMotor.C1 = CFrame.identity
+	weaponMotor.Parent = rootPart
+
+	local aimPart = Instance.new("Part")
+	aimPart.Name = "AimPart"
+	aimPart.Size = Vector3.new(0.2, 0.2, 0.2)
+	aimPart.Transparency = 1
+	aimPart.Anchored = false
+	aimPart.CanCollide = false
+	aimPart.CanQuery = false
+	aimPart.CanTouch = false
+	aimPart.Massless = true
+	aimPart.Parent = model
+
+	local aimMotor = Instance.new("Motor6D")
+	aimMotor.Name = "AimMotor"
+	aimMotor.Part0 = rootPart
+	aimMotor.Part1 = aimPart
+	aimMotor.C0 = CFrame.new(0, sightHeight, 0.15)
+	aimMotor.C1 = CFrame.identity
+	aimMotor.Parent = rootPart
 
 	local muzzleAttachment = Instance.new("Attachment")
 	muzzleAttachment.Name = "MuzzleAttachment"
-	muzzleAttachment.Position = Vector3.new(0, 0, -0.4)
-	muzzleAttachment.Parent = barrel
-
-	local rootToReceiver = Instance.new("Motor6D")
-	rootToReceiver.Name = "ReceiverJoint"
-	rootToReceiver.Part0 = rootPart
-	rootToReceiver.Part1 = receiver
-	rootToReceiver.C0 = CFrame.new(0.45, -0.4, -1.1)
-	rootToReceiver.Parent = rootPart
-
-	local receiverToBarrel = Instance.new("WeldConstraint")
-	receiverToBarrel.Part0 = receiver
-	receiverToBarrel.Part1 = barrel
-	receiverToBarrel.Parent = receiver
+	muzzleAttachment.Position = Vector3.new(0, 0.04, -weaponMesh.Size.Z * 0.5)
+	muzzleAttachment.Parent = weaponMesh
 
 	local animController = Instance.new("AnimationController")
 	animController.Parent = model
@@ -6800,6 +6544,7 @@ local function createProceduralWorldmodel(name: string): Model
 	handle.CanCollide = false
 	handle.CanQuery = false
 	handle.CanTouch = false
+	handle.Massless = true
 	handle.Parent = model
 
 	local muzzleAttachment = Instance.new("Attachment")
@@ -6922,20 +6667,28 @@ return table.freeze(AssetRegistry)
 --[[
 	MovementConfig.luau
 	Read-only movement, bunny-hop, air-strafe, slide, and camera physics constants.
+	Includes strict alias keys for MovementController and SlideController compatibility.
 ]]
 
 export type MovementConfigType = {
 	-- Ground Movement
 	GroundWalkSpeed: number,
+	MaxGroundSpeed: number,
+	WalkSpeed: number,
 	GroundSprintSpeed: number,
 	GroundAcceleration: number,
+	GroundAccelerate: number,
+	Accelerate: number,
 	GroundFriction: number,
 	StopSpeed: number,
 
 	-- Air Movement & Bunny-Hop
 	AirWishSpeed: number,
+	MaxAirWishSpeed: number,
 	AirAcceleration: number,
+	AirAccelerate: number,
 	MaxPlanarSpeed: number,
+	HardSpeedCap: number,
 	JumpVelocity: number,
 	Gravity: number,
 	AutoBhopEnabled: boolean,
@@ -6944,18 +6697,23 @@ export type MovementConfigType = {
 
 	-- Sliding
 	SlideMinEntrySpeed: number,
+	MinSlideSpeed: number,
 	SlideImpulseBoost: number,
+	SlideBoostImpulse: number,
 	SlideFriction: number,
 	SlideSteerAcceleration: number,
 	SlideDuration: number,
 	SlideCooldown: number,
 	SlideCameraDropStuds: number,
+	SlideCameraOffsetY: number,
+	SlideCameraLerpSpeed: number,
 	SlideColliderHeightScale: number,
 
 	-- Ground Raycast & Collider
 	StandingHipHeight: number,
 	SlideHipHeight: number,
 	GroundRayDistance: number,
+	GroundRayLength: number,
 	MaxSlopeAngle: number,
 
 	-- Camera & Dynamic FOV
@@ -6971,40 +6729,52 @@ export type MovementConfigType = {
 local MovementConfig: MovementConfigType = {
 	-- Ground Movement
 	GroundWalkSpeed = 24,
+	MaxGroundSpeed = 24,
+	WalkSpeed = 24,
 	GroundSprintSpeed = 30,
 	GroundAcceleration = 14,
+	GroundAccelerate = 14,
+	Accelerate = 14,
 	GroundFriction = 6,
 	StopSpeed = 10,
 
 	-- Air Movement & Bunny-Hop
-	AirWishSpeed = 16,
+	AirWishSpeed = 6.5,
+	MaxAirWishSpeed = 6.5,
 	AirAcceleration = 120,
-	MaxPlanarSpeed = 95,
-	JumpVelocity = 52,
+	AirAccelerate = 120,
+	MaxPlanarSpeed = 85,
+	HardSpeedCap = 85,
+	JumpVelocity = 42,
 	Gravity = 150,
 	AutoBhopEnabled = true,
 	JumpBufferWindow = 0.12,
 	CoyoteTimeWindow = 0.08,
 
 	-- Sliding
-	SlideMinEntrySpeed = 22,
-	SlideImpulseBoost = 18,
-	SlideFriction = 1.6,
+	SlideMinEntrySpeed = 26,
+	MinSlideSpeed = 26,
+	SlideImpulseBoost = 16,
+	SlideBoostImpulse = 16,
+	SlideFriction = 1.2,
 	SlideSteerAcceleration = 35,
 	SlideDuration = 1.15,
 	SlideCooldown = 0.45,
 	SlideCameraDropStuds = 2.2,
+	SlideCameraOffsetY = -2.2,
+	SlideCameraLerpSpeed = 14,
 	SlideColliderHeightScale = 0.5,
 
 	-- Ground Raycast & Collider
 	StandingHipHeight = 2.0,
 	SlideHipHeight = 0.8,
 	GroundRayDistance = 3.4,
+	GroundRayLength = 3.4,
 	MaxSlopeAngle = 50,
 
 	-- Camera & Dynamic FOV
-	BaseFOV = 90,
-	MaxSpeedFOV = 112,
+	BaseFOV = 85,
+	MaxSpeedFOV = 103,
 	FOVSpeedThreshold = 28,
 	FOVMaxSpeedReference = 85,
 	FOVLerpSpeed = 12,
@@ -7020,29 +6790,40 @@ return table.freeze(MovementConfig)
 --!strict
 --[[
 	WeaponData.luau
-	Read-only weapon balance, recoil spring parameters, spread, and asset bindings.
+	Read-only weapon balance, recoil spring parameters, spread, ADS settings, and asset bindings.
+	Includes compatibility aliases for WeaponController, CombatValidator, ViewmodelController, and GraphicsController.
 ]]
 
 export type WeaponStats = {
 	Id: string,
+	WeaponId: number,
 	DisplayName: string,
 	Slot: number,
 	Automatic: boolean,
 	FireRateRPM: number,
+	RPM: number,
+	FireRate: number,
 	FireInterval: number,
 	BaseDamage: number,
+	Damage: number,
 	HeadshotMultiplier: number,
 	MaxRange: number,
+	Range: number,
 	Pellets: number,
 	BaseSpreadRad: number,
 	MoveSpreadPenaltyRad: number,
 	MagazineSize: number,
+	MaxAmmo: number,
 	ReloadTime: number,
 	EquipTime: number,
 	RecoilKickPos: Vector3,
+	RecoilKick: Vector3,
 	RecoilKickRot: Vector3,
 	CameraRecoilPitch: number,
 	CameraRecoilYaw: number,
+	AimSpeed: number,
+	ADSFov: number,
+	IsOverdrive: boolean,
 	TracerColor: Color3,
 	ViewmodelKey: string,
 	WorldmodelKey: string,
@@ -7053,202 +6834,201 @@ export type WeaponStats = {
 
 export type WeaponMap = { [string]: WeaponStats }
 
-local Weapons: WeaponMap = {
-	PulseRifle = table.freeze({
-		Id = "PulseRifle",
-		DisplayName = "VX-9 Pulse Rifle",
-		Slot = 1,
-		Automatic = true,
-		FireRateRPM = 650,
-		FireInterval = 60 / 650,
-		BaseDamage = 22,
-		HeadshotMultiplier = 1.75,
-		MaxRange = 450,
-		Pellets = 1,
-		BaseSpreadRad = math.rad(0.35),
-		MoveSpreadPenaltyRad = math.rad(0.65),
-		MagazineSize = 30,
-		ReloadTime = 1.75,
-		EquipTime = 0.35,
-		RecoilKickPos = Vector3.new(0, 0.08, 0.32),
-		RecoilKickRot = Vector3.new(math.rad(4.5), math.rad(1.2), math.rad(1.0)),
-		CameraRecoilPitch = math.rad(0.85),
-		CameraRecoilYaw = math.rad(0.35),
-		TracerColor = Color3.fromRGB(0, 230, 255),
-		ViewmodelKey = "PulseRifleViewmodel",
-		WorldmodelKey = "PulseRifleWorld",
-		FireSoundKey = "PulseRifleFire",
-		ReloadSoundKey = "PulseRifleReload",
-		IconKey = "PulseRifle",
-	}),
+local VortexSmgStats: WeaponStats = table.freeze({
+	Id = "VORTEX_SMG",
+	WeaponId = 1,
+	DisplayName = "VX-9 Pulse SMG",
+	Slot = 1,
+	Automatic = true,
+	FireRateRPM = 650,
+	RPM = 650,
+	FireRate = 650,
+	FireInterval = 60 / 650,
+	BaseDamage = 22,
+	Damage = 22,
+	HeadshotMultiplier = 1.75,
+	MaxRange = 450,
+	Range = 450,
+	Pellets = 1,
+	BaseSpreadRad = math.rad(0.35),
+	MoveSpreadPenaltyRad = math.rad(0.65),
+	MagazineSize = 30,
+	MaxAmmo = 30,
+	ReloadTime = 1.75,
+	EquipTime = 0.35,
+	RecoilKickPos = Vector3.new(0, 0.08, 0.32),
+	RecoilKick = Vector3.new(0, 0.08, 0.32),
+	RecoilKickRot = Vector3.new(math.rad(4.5), math.rad(1.2), math.rad(1.0)),
+	CameraRecoilPitch = math.rad(0.85),
+	CameraRecoilYaw = math.rad(0.35),
+	AimSpeed = 18,
+	ADSFov = 70,
+	IsOverdrive = false,
+	TracerColor = Color3.fromRGB(0, 230, 255),
+	ViewmodelKey = "PulseRifleViewmodel",
+	WorldmodelKey = "PulseRifleWorld",
+	FireSoundKey = "PulseRifleFire",
+	ReloadSoundKey = "PulseRifleReload",
+	IconKey = "PulseRifle",
+})
 
-	Railgun = table.freeze({
-		Id = "Railgun",
-		DisplayName = "Helios Linear Railgun",
-		Slot = 2,
-		Automatic = false,
-		FireRateRPM = 55,
-		FireInterval = 60 / 55,
-		BaseDamage = 80,
-		HeadshotMultiplier = 2.0,
-		MaxRange = 900,
-		Pellets = 1,
-		BaseSpreadRad = 0,
-		MoveSpreadPenaltyRad = 0,
-		MagazineSize = 5,
-		ReloadTime = 2.4,
-		EquipTime = 0.45,
-		RecoilKickPos = Vector3.new(0, 0.22, 0.75),
-		RecoilKickRot = Vector3.new(math.rad(12.0), math.rad(2.0), math.rad(2.5)),
-		CameraRecoilPitch = math.rad(2.8),
-		CameraRecoilYaw = math.rad(0.4),
-		TracerColor = Color3.fromRGB(255, 70, 210),
-		ViewmodelKey = "RailgunViewmodel",
-		WorldmodelKey = "RailgunWorld",
-		FireSoundKey = "RailgunFire",
-		ReloadSoundKey = "RailgunReload",
-		IconKey = "Railgun",
-	}),
+local HeliosRailStats: WeaponStats = table.freeze({
+	Id = "HELIOS_RAIL",
+	WeaponId = 2,
+	DisplayName = "Helios Linear Railgun",
+	Slot = 2,
+	Automatic = false,
+	FireRateRPM = 55,
+	RPM = 55,
+	FireRate = 55,
+	FireInterval = 60 / 55,
+	BaseDamage = 80,
+	Damage = 80,
+	HeadshotMultiplier = 2.0,
+	MaxRange = 900,
+	Range = 900,
+	Pellets = 1,
+	BaseSpreadRad = 0,
+	MoveSpreadPenaltyRad = 0,
+	MagazineSize = 5,
+	MaxAmmo = 5,
+	ReloadTime = 2.4,
+	EquipTime = 0.45,
+	RecoilKickPos = Vector3.new(0, 0.22, 0.75),
+	RecoilKick = Vector3.new(0, 0.22, 0.75),
+	RecoilKickRot = Vector3.new(math.rad(12.0), math.rad(2.0), math.rad(2.5)),
+	CameraRecoilPitch = math.rad(2.8),
+	CameraRecoilYaw = math.rad(0.4),
+	AimSpeed = 12,
+	ADSFov = 50,
+	IsOverdrive = true,
+	TracerColor = Color3.fromRGB(255, 140, 35),
+	ViewmodelKey = "RailgunViewmodel",
+	WorldmodelKey = "RailgunWorld",
+	FireSoundKey = "RailgunFire",
+	ReloadSoundKey = "RailgunReload",
+	IconKey = "Railgun",
+})
 
-	PlasmaShotgun = table.freeze({
-		Id = "PlasmaShotgun",
-		DisplayName = "Nova Scattergun",
-		Slot = 3,
-		Automatic = false,
-		FireRateRPM = 95,
-		FireInterval = 60 / 95,
-		BaseDamage = 11,
-		HeadshotMultiplier = 1.4,
-		MaxRange = 180,
-		Pellets = 9,
-		BaseSpreadRad = math.rad(3.6),
-		MoveSpreadPenaltyRad = math.rad(0.4),
-		MagazineSize = 8,
-		ReloadTime = 2.1,
-		EquipTime = 0.4,
-		RecoilKickPos = Vector3.new(0, 0.18, 0.6),
-		RecoilKickRot = Vector3.new(math.rad(9.5), math.rad(2.5), math.rad(2.0)),
-		CameraRecoilPitch = math.rad(2.1),
-		CameraRecoilYaw = math.rad(0.6),
-		TracerColor = Color3.fromRGB(255, 165, 40),
-		ViewmodelKey = "PlasmaShotgunViewmodel",
-		WorldmodelKey = "PlasmaShotgunWorld",
-		FireSoundKey = "PlasmaShotgunFire",
-		ReloadSoundKey = "PlasmaShotgunReload",
-		IconKey = "PlasmaShotgun",
-	}),
+local PlasmaShotgunStats: WeaponStats = table.freeze({
+	Id = "PlasmaShotgun",
+	WeaponId = 3,
+	DisplayName = "Nova Scattergun",
+	Slot = 3,
+	Automatic = false,
+	FireRateRPM = 95,
+	RPM = 95,
+	FireRate = 95,
+	FireInterval = 60 / 95,
+	BaseDamage = 11,
+	Damage = 11,
+	HeadshotMultiplier = 1.4,
+	MaxRange = 180,
+	Range = 180,
+	Pellets = 9,
+	BaseSpreadRad = math.rad(3.6),
+	MoveSpreadPenaltyRad = math.rad(0.4),
+	MagazineSize = 8,
+	MaxAmmo = 8,
+	ReloadTime = 2.1,
+	EquipTime = 0.4,
+	RecoilKickPos = Vector3.new(0, 0.18, 0.6),
+	RecoilKick = Vector3.new(0, 0.18, 0.6),
+	RecoilKickRot = Vector3.new(math.rad(9.5), math.rad(2.5), math.rad(2.0)),
+	CameraRecoilPitch = math.rad(2.1),
+	CameraRecoilYaw = math.rad(0.6),
+	AimSpeed = 15,
+	ADSFov = 70,
+	IsOverdrive = false,
+	TracerColor = Color3.fromRGB(255, 165, 40),
+	ViewmodelKey = "PlasmaShotgunViewmodel",
+	WorldmodelKey = "PlasmaShotgunWorld",
+	FireSoundKey = "PlasmaShotgunFire",
+	ReloadSoundKey = "PlasmaShotgunReload",
+	IconKey = "PlasmaShotgun",
+})
 
-	IonSidearm = table.freeze({
-		Id = "IonSidearm",
-		DisplayName = "Kestrel Ion Sidearm",
-		Slot = 4,
-		Automatic = false,
-		FireRateRPM = 360,
-		FireInterval = 60 / 360,
-		BaseDamage = 26,
-		HeadshotMultiplier = 1.9,
-		MaxRange = 320,
-		Pellets = 1,
-		BaseSpreadRad = math.rad(0.25),
-		MoveSpreadPenaltyRad = math.rad(0.35),
-		MagazineSize = 12,
-		ReloadTime = 1.25,
-		EquipTime = 0.22,
-		RecoilKickPos = Vector3.new(0, 0.1, 0.25),
-		RecoilKickRot = Vector3.new(math.rad(5.5), math.rad(1.0), math.rad(1.2)),
-		CameraRecoilPitch = math.rad(1.0),
-		CameraRecoilYaw = math.rad(0.25),
-		TracerColor = Color3.fromRGB(90, 255, 150),
-		ViewmodelKey = "IonSidearmViewmodel",
-		WorldmodelKey = "IonSidearmWorld",
-		FireSoundKey = "IonSidearmFire",
-		ReloadSoundKey = "IonSidearmReload",
-		IconKey = "IonSidearm",
-	}),
+local IonSidearmStats: WeaponStats = table.freeze({
+	Id = "IonSidearm",
+	WeaponId = 4,
+	DisplayName = "Kestrel Ion Sidearm",
+	Slot = 4,
+	Automatic = false,
+	FireRateRPM = 360,
+	RPM = 360,
+	FireRate = 360,
+	FireInterval = 60 / 360,
+	BaseDamage = 26,
+	Damage = 26,
+	HeadshotMultiplier = 1.9,
+	MaxRange = 320,
+	Range = 320,
+	Pellets = 1,
+	BaseSpreadRad = math.rad(0.25),
+	MoveSpreadPenaltyRad = math.rad(0.35),
+	MagazineSize = 12,
+	MaxAmmo = 12,
+	ReloadTime = 1.25,
+	EquipTime = 0.22,
+	RecoilKickPos = Vector3.new(0, 0.1, 0.25),
+	RecoilKick = Vector3.new(0, 0.1, 0.25),
+	RecoilKickRot = Vector3.new(math.rad(5.5), math.rad(1.0), math.rad(1.2)),
+	CameraRecoilPitch = math.rad(1.0),
+	CameraRecoilYaw = math.rad(0.25),
+	AimSpeed = 18,
+	ADSFov = 70,
+	IsOverdrive = false,
+	TracerColor = Color3.fromRGB(90, 255, 150),
+	ViewmodelKey = "IonSidearmViewmodel",
+	WorldmodelKey = "IonSidearmWorld",
+	FireSoundKey = "IonSidearmFire",
+	ReloadSoundKey = "IonSidearmReload",
+	IconKey = "IonSidearm",
+})
 
-	VORTEX_SMG = table.freeze({
-		Id = "VORTEX_SMG",
-		DisplayName = "Vortex SMG",
-		Slot = 1,
-		Automatic = true,
-		FireRateRPM = 720,
-		FireInterval = 60 / 720,
-		BaseDamage = 18,
-		HeadshotMultiplier = 2.0,
-		MaxRange = 600,
-		Pellets = 1,
-		BaseSpreadRad = math.rad(0.4),
-		MoveSpreadPenaltyRad = math.rad(0.7),
-		MagazineSize = 30,
-		ReloadTime = 1.35,
-		EquipTime = 0.3,
-		RecoilKickPos = Vector3.new(0, 0.04, 0.18),
-		RecoilKickRot = Vector3.new(math.rad(3.5), math.rad(0.8), math.rad(0.8)),
-		CameraRecoilPitch = math.rad(0.65),
-		CameraRecoilYaw = math.rad(0.25),
-		TracerColor = Color3.fromRGB(0, 225, 255),
-		ViewmodelKey = "PulseRifleViewmodel",
-		WorldmodelKey = "PulseRifleWorld",
-		FireSoundKey = "PulseRifleFire",
-		ReloadSoundKey = "PulseRifleReload",
-		IconKey = "PulseRifle",
-	}),
+local Weapons: WeaponMap = table.freeze({
+	VORTEX_SMG = VortexSmgStats,
+	PulseRifle = VortexSmgStats,
+	HELIOS_RAIL = HeliosRailStats,
+	Railgun = HeliosRailStats,
+	PlasmaShotgun = PlasmaShotgunStats,
+	IonSidearm = IonSidearmStats,
+})
 
-	HELIOS_RAIL = table.freeze({
-		Id = "HELIOS_RAIL",
-		DisplayName = "Helios Railgun",
-		Slot = 2,
-		Automatic = false,
-		FireRateRPM = 51,
-		FireInterval = 60 / 51,
-		BaseDamage = 95,
-		HeadshotMultiplier = 2.5,
-		MaxRange = 1200,
-		Pellets = 1,
-		BaseSpreadRad = 0,
-		MoveSpreadPenaltyRad = 0,
-		MagazineSize = 5,
-		ReloadTime = 2.1,
-		EquipTime = 0.45,
-		RecoilKickPos = Vector3.new(0, 0.16, 0.55),
-		RecoilKickRot = Vector3.new(math.rad(12.0), math.rad(2.0), math.rad(2.5)),
-		CameraRecoilPitch = math.rad(2.8),
-		CameraRecoilYaw = math.rad(0.4),
-		TracerColor = Color3.fromRGB(255, 55, 215),
-		ViewmodelKey = "RailgunViewmodel",
-		WorldmodelKey = "RailgunWorld",
-		FireSoundKey = "RailgunFire",
-		ReloadSoundKey = "RailgunReload",
-		IconKey = "Railgun",
-	}),
-}
-
--- Aliases
-Weapons["pulse_rifle"] = Weapons.PulseRifle
-Weapons["scatter_blaster"] = Weapons.PlasmaShotgun
-Weapons["vortex_smg"] = Weapons.VORTEX_SMG
-Weapons["helios_rail"] = Weapons.HELIOS_RAIL
+local NumericWeaponLookup: { [number]: WeaponStats } = table.freeze({
+	[1] = VortexSmgStats,
+	[2] = HeliosRailStats,
+	[3] = PlasmaShotgunStats,
+	[4] = IonSidearmStats,
+})
 
 local DefaultLoadout = table.freeze({
-	"PulseRifle",
-	"Railgun",
+	"VORTEX_SMG",
+	"HELIOS_RAIL",
 	"PlasmaShotgun",
 	"IonSidearm",
 })
 
-local WeaponData: any = {
-	Weapons = table.freeze(Weapons),
+local WeaponData = {
+	Weapons = Weapons,
+	VORTEX_SMG = VortexSmgStats,
+	PulseRifle = VortexSmgStats,
+	HELIOS_RAIL = HeliosRailStats,
+	Railgun = HeliosRailStats,
+	PlasmaShotgun = PlasmaShotgunStats,
+	IonSidearm = IonSidearmStats,
+	ADSFov = 70,
 	DefaultLoadout = DefaultLoadout,
-	DefaultWeaponId = "PulseRifle",
+	DefaultWeaponId = "VORTEX_SMG",
 
 	GetWeapon = function(weaponId: string): WeaponStats?
 		return Weapons[weaponId]
 	end,
-}
 
-for k, v in Weapons do
-	WeaponData[k] = v
-end
+	GetWeaponByNumericId = function(id: number): WeaponStats
+		return NumericWeaponLookup[id] or VortexSmgStats
+	end,
+}
 
 return table.freeze(WeaponData)
 ````
@@ -7448,7 +7228,7 @@ return table.freeze(Spring)
 	28-byte binary buffer serializer and deserializer for client-to-server hitscan fire packets.
 
 	Byte Layout (28 bytes total, little-endian):
-	  [0..7]   f64 : timestamp (Workspace:GetServerTimeNow())
+	  [0..7]   f64 : timestamp (workspace:GetServerTimeNow())
 	  [8..11]  f32 : origin.X
 	  [12..15] f32 : origin.Y
 	  [16..19] f32 : origin.Z
@@ -7456,12 +7236,15 @@ return table.freeze(Spring)
 	  [24..27] f32 : yaw   (radians)
 ]]
 
+local Workspace = game:GetService("Workspace")
+
 local PACKET_SIZE = 28
 local HALF_PI = math.pi * 0.5
 
-export type ShotData = {
+export type DecodedShotPacket = {
 	Timestamp: number,
 	Origin: Vector3,
+	Direction: Vector3,
 	Pitch: number,
 	Yaw: number,
 }
@@ -7474,9 +7257,68 @@ local function isFinite(n: number): boolean
 	return n == n and n ~= math.huge and n ~= -math.huge
 end
 
-function ShotPacket.Encode(timestamp: number, origin: Vector3, pitch: number, yaw: number): buffer
-	local buf = buffer.create(PACKET_SIZE)
+function ShotPacket.DirectionToPitchYaw(dir: Vector3): (number, number)
+	local unitDir = if dir.Magnitude > 1e-6 then dir.Unit else -Vector3.zAxis
+	local pitch = math.asin(math.clamp(unitDir.Y, -1, 1))
+	local yaw = math.atan2(-unitDir.X, -unitDir.Z)
+	return pitch, yaw
+end
 
+--[[
+	Supports both calling conventions without throwing:
+	1. ShotPacket.Encode(timestamp: number, origin: Vector3, pitch: number, yaw: number): buffer
+	2. Overload for table or (origin: Vector3, direction: Vector3, timestamp: number?, weaponId: number?)
+]]
+function ShotPacket.Encode(a: any, b: any?, c: any?, d: any?): buffer
+	local timestamp: number = 0
+	local origin: Vector3 = Vector3.zero
+	local pitch: number = 0
+	local yaw: number = 0
+
+	if type(a) == "table" then
+		local tbl = a :: { [string]: any }
+		timestamp = if type(tbl.Timestamp) == "number"
+			then tbl.Timestamp
+			elseif type(tbl.timestamp) == "number" then tbl.timestamp
+			else Workspace:GetServerTimeNow()
+
+		origin = if typeof(tbl.Origin) == "Vector3"
+			then tbl.Origin
+			elseif typeof(tbl.origin) == "Vector3" then tbl.origin
+			else Vector3.zero
+
+		local dir = tbl.Direction or tbl.direction or tbl.LookVector or tbl.lookVector
+		if typeof(dir) == "Vector3" then
+			pitch, yaw = ShotPacket.DirectionToPitchYaw(dir)
+		else
+			pitch = tonumber(tbl.Pitch or tbl.pitch) or 0
+			yaw = tonumber(tbl.Yaw or tbl.yaw) or 0
+		end
+	elseif typeof(a) == "Vector3" then
+		-- Overload: (origin: Vector3, direction: Vector3, timestamp: number?, weaponId: number?)
+		origin = a
+		if typeof(b) == "Vector3" then
+			pitch, yaw = ShotPacket.DirectionToPitchYaw(b)
+		else
+			pitch = if type(b) == "number" then b else 0
+			yaw = if type(c) == "number" then c else 0
+		end
+		timestamp = if type(c) == "number" then c else Workspace:GetServerTimeNow()
+	else
+		-- Standard: (timestamp: number, origin: Vector3, pitch: number, yaw: number)
+		timestamp = if type(a) == "number" then a else Workspace:GetServerTimeNow()
+		origin = if typeof(b) == "Vector3" then b else Vector3.zero
+		if typeof(c) == "Vector3" then
+			pitch, yaw = ShotPacket.DirectionToPitchYaw(c)
+		else
+			pitch = if type(c) == "number" then c else 0
+			yaw = if type(d) == "number" then d else 0
+		end
+	end
+
+	pitch = math.clamp(pitch, -HALF_PI, HALF_PI)
+
+	local buf = buffer.create(PACKET_SIZE)
 	buffer.writef64(buf, 0, timestamp)
 	buffer.writef32(buf, 8, origin.X)
 	buffer.writef32(buf, 12, origin.Y)
@@ -7487,31 +7329,9 @@ function ShotPacket.Encode(timestamp: number, origin: Vector3, pitch: number, ya
 	return buf
 end
 
-ShotPacket.write = ShotPacket.Encode
-
-function ShotPacket.read(buf: buffer): ShotData
-	assert(buffer.len(buf) == PACKET_SIZE, "ShotPacket: invalid buffer length")
-	local timestamp: number = buffer.readf64(buf, 0)
-	local ox: number = buffer.readf32(buf, 8)
-	local oy: number = buffer.readf32(buf, 12)
-	local oz: number = buffer.readf32(buf, 16)
-	local pitch: number = buffer.readf32(buf, 20)
-	local yaw: number = buffer.readf32(buf, 24)
-	return {
-		Timestamp = timestamp,
-		Origin = Vector3.new(ox, oy, oz),
-		Pitch = pitch,
-		Yaw = yaw,
-	}
-end
-
-function ShotPacket.validate(buf: buffer): boolean
-	return typeof(buf) == "buffer" and buffer.len(buf) == PACKET_SIZE
-end
-
 function ShotPacket.Decode(buf: buffer): (boolean, number, Vector3, Vector3)
 	if typeof(buf) ~= "buffer" or buffer.len(buf) ~= PACKET_SIZE then
-		return false, 0, Vector3.zero, Vector3.zAxis
+		return false, 0, Vector3.zero, -Vector3.zAxis
 	end
 
 	local timestamp = buffer.readf64(buf, 0)
@@ -7529,13 +7349,12 @@ function ShotPacket.Decode(buf: buffer): (boolean, number, Vector3, Vector3)
 		or not isFinite(pitch)
 		or not isFinite(yaw)
 	then
-		return false, 0, Vector3.zero, Vector3.zAxis
+		return false, 0, Vector3.zero, -Vector3.zAxis
 	end
 
 	local clampedPitch = math.clamp(pitch, -HALF_PI, HALF_PI)
 	local origin = Vector3.new(ox, oy, oz)
 
-	-- Reconstruct unit LookVector from pitch (X-axis rotation) and yaw (Y-axis rotation)
 	local cosPitch = math.cos(clampedPitch)
 	local lookDir = Vector3.new(
 		-math.sin(yaw) * cosPitch,
@@ -7545,6 +7364,24 @@ function ShotPacket.Decode(buf: buffer): (boolean, number, Vector3, Vector3)
 
 	local lookVector = if lookDir.Magnitude > 1e-6 then lookDir.Unit else -Vector3.zAxis
 	return true, timestamp, origin, lookVector
+end
+
+function ShotPacket.DecodeTable(buf: buffer): DecodedShotPacket?
+	local isValid, timestamp, origin, lookVector = ShotPacket.Decode(buf)
+	if not isValid then
+		return nil
+	end
+
+	local rawPitch = math.clamp(buffer.readf32(buf, 20), -HALF_PI, HALF_PI)
+	local rawYaw = buffer.readf32(buf, 24)
+
+	return {
+		Timestamp = timestamp,
+		Origin = origin,
+		Direction = lookVector,
+		Pitch = rawPitch,
+		Yaw = rawYaw,
+	}
 end
 
 return table.freeze(ShotPacket)

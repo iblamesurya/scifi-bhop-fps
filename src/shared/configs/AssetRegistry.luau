@@ -1,9 +1,9 @@
 --!strict
 --[[
 	AssetRegistry.luau
-	Centralized read-only registry for audio IDs, UI sprite IDs, VFX prefabs, and 3D models.
-	Provides safe procedural dummy fallbacks whenever .rbxm files in ReplicatedStorage.Assets.Models
-	or ReplicatedStorage.Graphics.VFXPrefabs are not yet present.
+	Centralized read-only registry for standardized NetworkEvents, audio IDs, UI sprite IDs,
+	and 3D models. Provides procedural fallback rigs matching ViewmodelController's exact
+	RootPart -> WeaponMotor/WeaponMesh + AimMotor/AimPart + MuzzleAttachment hierarchy.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -46,6 +46,8 @@ local UISprites = table.freeze({
 		HitmarkerCross = "rbxassetid://0",
 	}),
 	WeaponIcons = table.freeze({
+		VORTEX_SMG = "rbxassetid://0",
+		HELIOS_RAIL = "rbxassetid://0",
 		PulseRifle = "rbxassetid://0",
 		Railgun = "rbxassetid://0",
 		PlasmaShotgun = "rbxassetid://0",
@@ -54,68 +56,109 @@ local UISprites = table.freeze({
 })
 
 local NetworkEvents = table.freeze({
-	ShotFired = "ShotFired",
+	-- Standardized Remote Names
+	FireWeaponBuffer = "FireWeaponBuffer",
+	ReloadWeaponEvent = "ReloadWeaponEvent",
+	HitConfirmEvent = "HitConfirmEvent",
+	StanceSyncBuffer = "StanceSyncBuffer",
+	RequestDeploy = "RequestDeploy",
+
+	-- Legacy Aliases
+	ShotFired = "FireWeaponBuffer",
 	ShotReplicated = "ShotReplicated",
-	HitConfirmed = "HitConfirmed",
-	StanceChanged = "StanceChanged",
+	HitConfirmed = "HitConfirmEvent",
+	StanceChanged = "StanceSyncBuffer",
 	WeaponEquipped = "WeaponEquipped",
-	ReloadRequested = "ReloadRequested",
+	ReloadRequested = "ReloadWeaponEvent",
 })
 
 local function createProceduralViewmodel(name: string): Model
 	local model = Instance.new("Model")
 	model.Name = name
 
+	local isRailgun = name == "HELIOS_RAIL"
+		or name == "RailgunViewmodel"
+		or name == "Railgun"
+
+	local meshSize = if isRailgun then Vector3.new(0.32, 0.42, 2.5) else Vector3.new(0.36, 0.44, 1.75)
+	local sightHeight = if isRailgun then 0.28 else 0.25
+	local accentColor = if isRailgun
+		then Color3.fromRGB(255, 140, 35)
+		else Color3.fromRGB(0, 225, 255)
+
 	local rootPart = Instance.new("Part")
-	rootPart.Name = "HumanoidRootPart"
+	rootPart.Name = "RootPart"
 	rootPart.Size = Vector3.new(0.5, 0.5, 0.5)
 	rootPart.Transparency = 1
-	rootPart.Anchored = true
+	rootPart.Anchored = false
 	rootPart.CanCollide = false
 	rootPart.CanQuery = false
 	rootPart.CanTouch = false
+	rootPart.Massless = true
 	rootPart.Parent = model
 
-	local receiver = Instance.new("Part")
-	receiver.Name = "Receiver"
-	receiver.Size = Vector3.new(0.35, 0.45, 1.8)
-	receiver.Color = Color3.fromRGB(35, 42, 55)
-	receiver.Material = Enum.Material.Metal
-	receiver.Anchored = false
-	receiver.CanCollide = false
-	receiver.CanQuery = false
-	receiver.CanTouch = false
-	receiver.CFrame = rootPart.CFrame * CFrame.new(0.45, -0.4, -1.1)
-	receiver.Parent = model
+	local weaponMesh = Instance.new("Part")
+	weaponMesh.Name = "WeaponMesh"
+	weaponMesh.Size = meshSize
+	weaponMesh.Color = Color3.fromRGB(35, 42, 55)
+	weaponMesh.Material = Enum.Material.Metal
+	weaponMesh.Anchored = false
+	weaponMesh.CanCollide = false
+	weaponMesh.CanQuery = false
+	weaponMesh.CanTouch = false
+	weaponMesh.Massless = true
+	weaponMesh.Parent = model
 
-	local barrel = Instance.new("Part")
-	barrel.Name = "Muzzle"
-	barrel.Size = Vector3.new(0.18, 0.18, 0.8)
-	barrel.Color = Color3.fromRGB(0, 220, 255)
-	barrel.Material = Enum.Material.Neon
-	barrel.Anchored = false
-	barrel.CanCollide = false
-	barrel.CanQuery = false
-	barrel.CanTouch = false
-	barrel.CFrame = receiver.CFrame * CFrame.new(0, 0.1, -1.1)
-	barrel.Parent = model
+	local barrelAccent = Instance.new("Part")
+	barrelAccent.Name = "BarrelAccent"
+	barrelAccent.Size = Vector3.new(meshSize.X * 0.45, meshSize.Y * 0.35, meshSize.Z * 0.85)
+	barrelAccent.Color = accentColor
+	barrelAccent.Material = Enum.Material.Neon
+	barrelAccent.Anchored = false
+	barrelAccent.CanCollide = false
+	barrelAccent.CanQuery = false
+	barrelAccent.CanTouch = false
+	barrelAccent.Massless = true
+	barrelAccent.CFrame = weaponMesh.CFrame * CFrame.new(0, 0.04, -0.08)
+	barrelAccent.Parent = model
+
+	local accentWeld = Instance.new("WeldConstraint")
+	accentWeld.Name = "AccentWeld"
+	accentWeld.Part0 = weaponMesh
+	accentWeld.Part1 = barrelAccent
+	accentWeld.Parent = weaponMesh
+
+	local weaponMotor = Instance.new("Motor6D")
+	weaponMotor.Name = "WeaponMotor"
+	weaponMotor.Part0 = rootPart
+	weaponMotor.Part1 = weaponMesh
+	weaponMotor.C0 = CFrame.identity
+	weaponMotor.C1 = CFrame.identity
+	weaponMotor.Parent = rootPart
+
+	local aimPart = Instance.new("Part")
+	aimPart.Name = "AimPart"
+	aimPart.Size = Vector3.new(0.2, 0.2, 0.2)
+	aimPart.Transparency = 1
+	aimPart.Anchored = false
+	aimPart.CanCollide = false
+	aimPart.CanQuery = false
+	aimPart.CanTouch = false
+	aimPart.Massless = true
+	aimPart.Parent = model
+
+	local aimMotor = Instance.new("Motor6D")
+	aimMotor.Name = "AimMotor"
+	aimMotor.Part0 = rootPart
+	aimMotor.Part1 = aimPart
+	aimMotor.C0 = CFrame.new(0, sightHeight, 0.15)
+	aimMotor.C1 = CFrame.identity
+	aimMotor.Parent = rootPart
 
 	local muzzleAttachment = Instance.new("Attachment")
 	muzzleAttachment.Name = "MuzzleAttachment"
-	muzzleAttachment.Position = Vector3.new(0, 0, -0.4)
-	muzzleAttachment.Parent = barrel
-
-	local rootToReceiver = Instance.new("Motor6D")
-	rootToReceiver.Name = "ReceiverJoint"
-	rootToReceiver.Part0 = rootPart
-	rootToReceiver.Part1 = receiver
-	rootToReceiver.C0 = CFrame.new(0.45, -0.4, -1.1)
-	rootToReceiver.Parent = rootPart
-
-	local receiverToBarrel = Instance.new("WeldConstraint")
-	receiverToBarrel.Part0 = receiver
-	receiverToBarrel.Part1 = barrel
-	receiverToBarrel.Parent = receiver
+	muzzleAttachment.Position = Vector3.new(0, 0.04, -weaponMesh.Size.Z * 0.5)
+	muzzleAttachment.Parent = weaponMesh
 
 	local animController = Instance.new("AnimationController")
 	animController.Parent = model
@@ -139,6 +182,7 @@ local function createProceduralWorldmodel(name: string): Model
 	handle.CanCollide = false
 	handle.CanQuery = false
 	handle.CanTouch = false
+	handle.Massless = true
 	handle.Parent = model
 
 	local muzzleAttachment = Instance.new("Attachment")
