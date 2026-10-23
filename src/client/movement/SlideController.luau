@@ -1,0 +1,1 @@
+-- Slide controller — camera height drop and low-friction slide-hop mechanics

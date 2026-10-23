@@ -1,0 +1,1 @@
+-- Graphics quality tiers — Low (competitive 240FPS) vs High (ultra sci-fi) toggle

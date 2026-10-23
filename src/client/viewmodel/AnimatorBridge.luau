@@ -1,0 +1,1 @@
+-- Animator bridge — loads and plays animation tracks from the registry onto the active viewmodel

@@ -1,0 +1,1 @@
+-- Hitbox history — 60Hz heartbeat loop recording a 1-second CFrame ring buffer of every player

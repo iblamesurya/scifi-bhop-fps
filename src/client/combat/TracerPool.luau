@@ -1,0 +1,1 @@
+-- Tracer pool — zero-GC ring buffer of pre-allocated plasma tracer beam parts

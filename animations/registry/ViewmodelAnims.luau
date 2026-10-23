@@ -1,0 +1,1 @@
+-- Viewmodel animation ID lookup — maps weapon names to first-person anim asset IDs

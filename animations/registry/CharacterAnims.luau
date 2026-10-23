@@ -1,0 +1,1 @@
+-- Character animation ID lookup — maps third-person R6 locomotion and slide anim IDs

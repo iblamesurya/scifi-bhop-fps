@@ -1,0 +1,1 @@
+-- Crosshair module — velocity-reactive dynamic reticle that expands with player speed

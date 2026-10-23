@@ -1,0 +1,1 @@
+-- VFX controller — spawns muzzle flash particles and impact spark effects

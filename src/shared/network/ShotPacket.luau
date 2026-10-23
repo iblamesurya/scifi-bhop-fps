@@ -1,0 +1,1 @@
+-- Shot packet — packs and unpacks 28-byte raw Luau buffer for compact shot data over remotes

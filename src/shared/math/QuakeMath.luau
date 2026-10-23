@@ -1,0 +1,1 @@
+-- Quake math — shared vector projection acceleration and ground friction functions

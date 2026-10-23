@@ -1,0 +1,1 @@
+-- Movement config — tuning table for walk speed, sprint, air-accel, jump velocity, friction, and gravity

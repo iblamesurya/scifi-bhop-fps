@@ -1,0 +1,1 @@
+-- Weapon controller — firing loop, ammo state, client-side raycast prediction, and 28B buffer send

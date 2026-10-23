@@ -1,0 +1,1 @@
+-- Animation registry — central dictionary of all animation IDs, priorities, and fade times

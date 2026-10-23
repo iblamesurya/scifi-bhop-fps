@@ -1,0 +1,1 @@
+-- Asset registry — central lookup for viewmodel/worldmodel references, audio IDs, and sprite IDs

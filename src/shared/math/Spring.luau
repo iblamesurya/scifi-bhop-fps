@@ -1,0 +1,1 @@
+-- Spring — 3D damped harmonic oscillator (Hooke's law) for procedural weapon sway and camera recoil

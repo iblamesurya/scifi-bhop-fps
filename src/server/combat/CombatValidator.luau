@@ -1,0 +1,1 @@
+-- Combat validator — unpacks 28-byte shot buffers, rewinds hitboxes for lag compensation, applies damage

@@ -1,0 +1,1 @@
+-- Stance replicator — relays pitch angle and slide state to other players for third-person sync

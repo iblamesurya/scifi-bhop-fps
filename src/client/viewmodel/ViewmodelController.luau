@@ -1,0 +1,1 @@
+-- Viewmodel controller — dual-rig attachment, ADS lerp, 3D spring sway, and procedural recoil

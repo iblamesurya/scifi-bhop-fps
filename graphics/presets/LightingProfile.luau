@@ -1,0 +1,1 @@
+-- Lighting profile — sci-fi atmosphere settings (ambient, brightness, shadows, clock time)

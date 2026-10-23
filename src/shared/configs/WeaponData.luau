@@ -1,0 +1,1 @@
+-- Weapon data — stat definitions for every weapon (RPM, damage, recoil kick, ADS FOV, magazine size)
