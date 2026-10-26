@@ -114,7 +114,7 @@ local reloadElapsed = 0
 local reloadDuration = 0
 local currentReloadAlpha = 0
 
-local currentWeaponId: string = "VORTEX_SMG"
+local currentWeaponId: string = "M4A1_Carbine"
 local activeViewmodel: Model? = nil
 local rootPart: BasePart? = nil
 local aimPart: BasePart? = nil
@@ -332,11 +332,13 @@ local function bindViewmodelParts(model: Model)
 
 	for _, desc in model:GetDescendants() do
 		if desc:IsA("BasePart") then
+			desc.Anchored = true
 			desc.CanCollide = false
 			desc.CanQuery = false
 			desc.CanTouch = false
 			desc.Massless = true
 			desc.CastShadow = false
+			desc.LocalTransparencyModifier = 0
 		end
 	end
 
@@ -442,7 +444,8 @@ local function updateRenderStep(dt: number)
 		currentRollRad + recoilRot.Z + reloadTiltZ - (swayPos.X * 1.4)
 	)
 
-	currentRoot.CFrame = camera.CFrame * baseOffset * CFrame.new(proceduralTranslation) * proceduralRotation
+	local targetCFrame = camera.CFrame * baseOffset * CFrame.new(proceduralTranslation) * proceduralRotation
+	activeViewmodel:PivotTo(targetCFrame)
 end
 
 function ViewmodelController.EquipWeaponViewmodel(weaponId: string)

@@ -18,14 +18,31 @@ function LoadoutService.init(): ()
 end
 
 function LoadoutService.initPlayer(player: Player): ()
-	local defaultWeapon: string = "pulse_rifle"
-	local stats = WeaponData[defaultWeapon]
+	local defaultWeapon: string = (player:GetAttribute("SelectedWeapon") :: string?) or "M4A1_Carbine"
+	local stats = WeaponData[defaultWeapon] or WeaponData.VORTEX_SMG
 	playerLoadouts[player] = {
 		WeaponId = defaultWeapon,
-		CurrentAmmo = stats.MagazineSize,
+		CurrentAmmo = if stats then stats.MagazineSize else 30,
 		IsReloading = false,
 	}
 end
+
+function LoadoutService.EquipWeapon(player: Player, weaponId: string): ()
+	local stats = WeaponData[weaponId]
+		or (if type(WeaponData.GetWeapon) == "function" then WeaponData.GetWeapon(weaponId) else nil)
+	if not stats then
+		return
+	end
+	playerLoadouts[player] = {
+		WeaponId = weaponId,
+		CurrentAmmo = stats.MagazineSize or 30,
+		IsReloading = false,
+	}
+	player:SetAttribute("SelectedWeapon", weaponId)
+end
+
+LoadoutService.GiveWeapon = LoadoutService.EquipWeapon
+LoadoutService.AssignLoadout = LoadoutService.EquipWeapon
 
 function LoadoutService.removePlayer(player: Player): ()
 	playerLoadouts[player] = nil
@@ -80,10 +97,14 @@ end
 
 function LoadoutService.getCurrentWeapon(player: Player): string
 	local loadout: PlayerLoadout? = playerLoadouts[player]
-	if not loadout then
-		return "pulse_rifle"
+	if loadout and loadout.WeaponId ~= "" then
+		return loadout.WeaponId
 	end
-	return loadout.WeaponId
+	local attrWeapon = player:GetAttribute("SelectedWeapon")
+	if type(attrWeapon) == "string" and attrWeapon ~= "" then
+		return attrWeapon
+	end
+	return "M4A1_Carbine"
 end
 
 return LoadoutService

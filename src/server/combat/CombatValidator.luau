@@ -86,9 +86,9 @@ function CombatValidator.Init()
 		}
 	end
 
-	Players.PlayerAdded:Connect(function(player)
+	local function setupPlayer(player: Player)
 		initPlayerWeapons(player)
-		player.CharacterAdded:Connect(function(char)
+		player.CharacterAdded:Connect(function(_char)
 			local pState = playerStates[player]
 			if pState then
 				for weaponName, wState in pairs(pState.weapons) do
@@ -104,27 +104,49 @@ function CombatValidator.Init()
 				initPlayerWeapons(player)
 			end
 		end)
-	end)
+	end
+
+	Players.PlayerAdded:Connect(setupPlayer)
+	for _, existingPlayer in ipairs(Players:GetPlayers()) do
+		setupPlayer(existingPlayer)
+	end
 
 	Players.PlayerRemoving:Connect(function(player)
 		playerStates[player] = nil
 	end)
 
-	reloadEvent.OnServerEvent:Connect(function(shooter: Player)
+	reloadEvent.OnServerEvent:Connect(function(shooter: Player, switchedWeaponId: unknown)
 		local pState = playerStates[shooter]
+		if not pState then
+			initPlayerWeapons(shooter)
+			pState = playerStates[shooter]
+		end
 		if not pState then
 			return
 		end
 
-		local weaponName = "VORTEX_SMG"
-		if successLoadout and LoadoutService and type(LoadoutService.getCurrentWeapon) == "function" then
+		if type(switchedWeaponId) == "string" and switchedWeaponId ~= "" then
+			local switchConfig = if type(WeaponData.GetWeapon) == "function"
+				then WeaponData.GetWeapon(switchedWeaponId)
+				else WeaponData[switchedWeaponId]
+			if switchConfig then
+				shooter:SetAttribute("SelectedWeapon", switchedWeaponId)
+				if successLoadout and LoadoutService and type((LoadoutService :: any).EquipWeapon) == "function" then
+					(LoadoutService :: any).EquipWeapon(shooter, switchedWeaponId)
+				end
+				return
+			end
+		end
+
+		local weaponName = (shooter:GetAttribute("SelectedWeapon") :: string?) or ""
+		if weaponName == "" and successLoadout and LoadoutService and type(LoadoutService.getCurrentWeapon) == "function" then
 			local current = LoadoutService.getCurrentWeapon(shooter)
 			if current then
 				weaponName = current
 			end
 		end
 		if not weaponName or weaponName == "" then
-			weaponName = shooter:GetAttribute("SelectedWeapon") or "VORTEX_SMG"
+			weaponName = "M4A1_Carbine"
 		end
 
 		local weaponConfig = nil
@@ -174,15 +196,15 @@ function CombatValidator.Init()
 			return
 		end
 
-		local weaponName = "VORTEX_SMG"
-		if successLoadout and LoadoutService and type(LoadoutService.getCurrentWeapon) == "function" then
+		local weaponName = (shooter:GetAttribute("SelectedWeapon") :: string?) or ""
+		if weaponName == "" and successLoadout and LoadoutService and type(LoadoutService.getCurrentWeapon) == "function" then
 			local current = LoadoutService.getCurrentWeapon(shooter)
 			if current then
 				weaponName = current
 			end
 		end
 		if not weaponName or weaponName == "" then
-			weaponName = shooter:GetAttribute("SelectedWeapon") or "VORTEX_SMG"
+			weaponName = "M4A1_Carbine"
 		end
 
 		local weaponConfig = nil
@@ -197,6 +219,10 @@ function CombatValidator.Init()
 		end
 
 		local pState = playerStates[shooter]
+		if not pState then
+			initPlayerWeapons(shooter)
+			pState = playerStates[shooter]
+		end
 		if not pState then
 			return
 		end

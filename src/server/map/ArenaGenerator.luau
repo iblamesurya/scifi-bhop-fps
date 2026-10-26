@@ -558,18 +558,27 @@ local function createTargetDummy(name: string, position: Vector3, parent: Instan
 	return dummy
 end
 
-local function buildFiringRangeAndDummies(arenaRoot: Folder)
+local function buildFiringRangeAndDummies(arenaRoot: Folder, isPhantomMidway: boolean)
 	local targetFolder = Instance.new("Folder")
 	targetFolder.Name = "FiringRangeTargets"
 	targetFolder.Parent = arenaRoot
 
-	local dummyPositions = {
-		{ Name = "Close_Target_CQC", Pos = Vector3.new(0, 3, -40) },
-		{ Name = "Mid_Target_Rifle_West", Pos = Vector3.new(-32, 6, -90) },
-		{ Name = "Mid_Target_Rifle_East", Pos = Vector3.new(32, 6, -90) },
-		{ Name = "Far_Target_Sniper_NorthDeck", Pos = Vector3.new(0, 24, -196) },
-		{ Name = "Speed_Target_SouthBhop", Pos = Vector3.new(0, 3, 50) },
-	}
+	local dummyPositions = if isPhantomMidway
+		then {
+			{ Name = "Alpha_Lane_Target", Pos = Vector3.new(-110, 4, -8) },
+			{ Name = "Mid_Carousel_West", Pos = Vector3.new(-55, 4, 12) },
+			{ Name = "North_Arcade_Target", Pos = Vector3.new(0, 4, -52) },
+			{ Name = "South_Boardwalk_Target", Pos = Vector3.new(0, 4, 52) },
+			{ Name = "Mid_Carousel_East", Pos = Vector3.new(55, 4, -12) },
+			{ Name = "Bravo_Lane_Target", Pos = Vector3.new(110, 4, 8) },
+		}
+		else {
+			{ Name = "Close_Target_CQC", Pos = Vector3.new(0, 3, -40) },
+			{ Name = "Mid_Target_Rifle_West", Pos = Vector3.new(-32, 6, -90) },
+			{ Name = "Mid_Target_Rifle_East", Pos = Vector3.new(32, 6, -90) },
+			{ Name = "Far_Target_Sniper_NorthDeck", Pos = Vector3.new(0, 24, -196) },
+			{ Name = "Speed_Target_SouthBhop", Pos = Vector3.new(0, 3, 50) },
+		}
 
 	for _, d in ipairs(dummyPositions) do
 		createTargetDummy(d.Name, d.Pos, targetFolder)
@@ -596,13 +605,19 @@ function ArenaGenerator.Init()
 	local arenaRoot = Instance.new("Folder")
 	arenaRoot.Name = MapConfig.ArenaName
 
-	buildFloorAndPerimeter(arenaRoot)
-	buildLobbyBox(arenaRoot)
-	buildBhopSpeedway(arenaRoot)
-	buildDecksAndSightlines(arenaRoot)
-	buildStrafeWalls(arenaRoot)
-	buildSlideTunnels(arenaRoot)
-	buildFiringRangeAndDummies(arenaRoot)
+	local hasPhantomMidway = Workspace:FindFirstChild("PhantomMidway_5v5_Map") ~= nil
+	if hasPhantomMidway then
+		buildLobbyBox(arenaRoot)
+		buildFiringRangeAndDummies(arenaRoot, true)
+	else
+		buildFloorAndPerimeter(arenaRoot)
+		buildLobbyBox(arenaRoot)
+		buildBhopSpeedway(arenaRoot)
+		buildDecksAndSightlines(arenaRoot)
+		buildStrafeWalls(arenaRoot)
+		buildSlideTunnels(arenaRoot)
+		buildFiringRangeAndDummies(arenaRoot, false)
+	end
 
 	arenaRoot.Parent = Workspace
 end

@@ -114,11 +114,12 @@ local function createProceduralViewmodel(name: string): Model
 	rootPart.Name = "RootPart"
 	rootPart.Size = Vector3.new(0.5, 0.5, 0.5)
 	rootPart.Transparency = 1
-	rootPart.Anchored = false
+	rootPart.Anchored = true
 	rootPart.CanCollide = false
 	rootPart.CanQuery = false
 	rootPart.CanTouch = false
 	rootPart.Massless = true
+	rootPart.CFrame = CFrame.identity
 	rootPart.Parent = model
 
 	local weaponMesh = Instance.new("Part")
@@ -126,11 +127,12 @@ local function createProceduralViewmodel(name: string): Model
 	weaponMesh.Size = meshSize
 	weaponMesh.Color = Color3.fromRGB(35, 42, 55)
 	weaponMesh.Material = Enum.Material.Metal
-	weaponMesh.Anchored = false
+	weaponMesh.Anchored = true
 	weaponMesh.CanCollide = false
 	weaponMesh.CanQuery = false
 	weaponMesh.CanTouch = false
 	weaponMesh.Massless = true
+	weaponMesh.CFrame = rootPart.CFrame
 	weaponMesh.Parent = model
 
 	local barrelAccent = Instance.new("Part")
@@ -138,7 +140,7 @@ local function createProceduralViewmodel(name: string): Model
 	barrelAccent.Size = Vector3.new(meshSize.X * 0.45, meshSize.Y * 0.35, meshSize.Z * 0.85)
 	barrelAccent.Color = accentColor
 	barrelAccent.Material = Enum.Material.Neon
-	barrelAccent.Anchored = false
+	barrelAccent.Anchored = true
 	barrelAccent.CanCollide = false
 	barrelAccent.CanQuery = false
 	barrelAccent.CanTouch = false
@@ -164,11 +166,12 @@ local function createProceduralViewmodel(name: string): Model
 	aimPart.Name = "AimPart"
 	aimPart.Size = Vector3.new(0.2, 0.2, 0.2)
 	aimPart.Transparency = 1
-	aimPart.Anchored = false
+	aimPart.Anchored = true
 	aimPart.CanCollide = false
 	aimPart.CanQuery = false
 	aimPart.CanTouch = false
 	aimPart.Massless = true
+	aimPart.CFrame = rootPart.CFrame * CFrame.new(0, sightHeight, 0.15)
 	aimPart.Parent = model
 
 	local aimMotor = Instance.new("Motor6D")

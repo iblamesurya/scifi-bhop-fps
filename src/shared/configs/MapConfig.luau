@@ -67,23 +67,19 @@ local BhopPads: { PadData } = {
 }
 
 local ArenaSpawns: { CFrame } = {
-	-- North Spawn Deck (Team Alpha / FFA)
-	CFrame.lookAt(Vector3.new(0, 13, -184), Vector3.new(0, 13, 0)),
-	CFrame.lookAt(Vector3.new(-22, 13, -180), Vector3.new(0, 13, 0)),
-	CFrame.lookAt(Vector3.new(22, 13, -180), Vector3.new(0, 13, 0)),
-	CFrame.lookAt(Vector3.new(-42, 5, -150), Vector3.new(0, 5, 0)),
-	CFrame.lookAt(Vector3.new(42, 5, -150), Vector3.new(0, 5, 0)),
+	-- Phantom Midway 5v5 Alpha Squad Spawns (West Plaza facing +X)
+	CFrame.lookAt(Vector3.new(-148, 5, -24), Vector3.new(0, 5, -24)),
+	CFrame.lookAt(Vector3.new(-152, 5, -12), Vector3.new(0, 5, -12)),
+	CFrame.lookAt(Vector3.new(-154, 5, 0), Vector3.new(0, 5, 0)),
+	CFrame.lookAt(Vector3.new(-152, 5, 12), Vector3.new(0, 5, 12)),
+	CFrame.lookAt(Vector3.new(-148, 5, 24), Vector3.new(0, 5, 24)),
 
-	-- South Spawn Deck (Team Omega / FFA)
-	CFrame.lookAt(Vector3.new(0, 13, 184), Vector3.new(0, 13, 0)),
-	CFrame.lookAt(Vector3.new(-22, 13, 180), Vector3.new(0, 13, 0)),
-	CFrame.lookAt(Vector3.new(22, 13, 180), Vector3.new(0, 13, 0)),
-	CFrame.lookAt(Vector3.new(-42, 5, 150), Vector3.new(0, 5, 0)),
-	CFrame.lookAt(Vector3.new(42, 5, 150), Vector3.new(0, 5, 0)),
-
-	-- Mid Wing FFA Spawns
-	CFrame.lookAt(Vector3.new(-102, 5, 0), Vector3.new(0, 5, 0)),
-	CFrame.lookAt(Vector3.new(102, 5, 0), Vector3.new(0, 5, 0)),
+	-- Phantom Midway 5v5 Bravo Squad Spawns (East Plaza facing -X)
+	CFrame.lookAt(Vector3.new(148, 5, 24), Vector3.new(0, 5, 24)),
+	CFrame.lookAt(Vector3.new(152, 5, 12), Vector3.new(0, 5, 12)),
+	CFrame.lookAt(Vector3.new(154, 5, 0), Vector3.new(0, 5, 0)),
+	CFrame.lookAt(Vector3.new(152, 5, -12), Vector3.new(0, 5, -12)),
+	CFrame.lookAt(Vector3.new(148, 5, -24), Vector3.new(0, 5, -24)),
 }
 
 local JumpPads: { JumpPadSpec } = {

@@ -129,7 +129,8 @@ local FALLBACK_RECORDS = {
 -- State
 local isInitialized = false
 local lobbyGui: ScreenGui? = nil
-local selectedWeaponId = "VORTEX_SMG"
+local deployBtnRef: TextButton? = nil
+local selectedWeaponId = "M4A1_Carbine"
 local competitive240Mode = false
 local manualOverlayOpen = false
 local localPeakSpeed = 0.0
@@ -326,8 +327,13 @@ local function syncLobbyState()
 	local inArena = LocalPlayer:GetAttribute("InArena") == true
 	local showLobby = (not inArena) or manualOverlayOpen
 
+	LocalPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
+
 	if lobbyGui then
 		lobbyGui.Enabled = showLobby
+	end
+	if deployBtnRef then
+		deployBtnRef.Modal = showLobby
 	end
 
 	if showLobby then
@@ -626,6 +632,7 @@ function LobbyApp.Init()
 	end)
 
 	deployBtn.Activated:Connect(handleDeployClicked)
+	deployBtnRef = deployBtn
 
 	-- Keybind (M or B) to reopen/toggle Loadout overlay while in Arena
 	UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessed: boolean)

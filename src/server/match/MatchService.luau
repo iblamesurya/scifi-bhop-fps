@@ -46,7 +46,7 @@ local CharacterService = resolveOptionalService("CharacterService")
 local LoadoutService = resolveOptionalService("LoadoutService")
 local EconomyManager = resolveOptionalService("EconomyManager")
 
-local DEFAULT_WEAPON_ID = "VORTEX_SMG"
+local DEFAULT_WEAPON_ID = "M4A1_Carbine"
 local RESPAWN_DELAY = 3.0
 local REQUEST_DEPLOY_EVENT_NAME = "RequestDeploy"
 
@@ -142,7 +142,7 @@ end
 
 local function initPlayerAttributes(player: Player)
 	if player:GetAttribute("InArena") == nil then
-		player:SetAttribute("InArena", false)
+		player:SetAttribute("InArena", true)
 	end
 	if player:GetAttribute("SelectedWeapon") == nil then
 		player:SetAttribute("SelectedWeapon", DEFAULT_WEAPON_ID)
@@ -223,7 +223,7 @@ end
 
 local function onPlayerAdded(player: Player)
 	initPlayerAttributes(player)
-	player:SetAttribute("InArena", false)
+	player:SetAttribute("InArena", true)
 
 	player.CharacterAdded:Connect(function(character: Model)
 		onCharacterAdded(player, character)

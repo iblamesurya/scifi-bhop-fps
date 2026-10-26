@@ -8,6 +8,13 @@
   ],
   "tree": {
     "$className": "DataModel",
+    "Workspace": {
+      "$className": "Workspace",
+      "$ignoreUnknownInstances": true,
+      "PhantomMidway_5v5_Map": {
+        "$path": "assets/maps/PhantomMidway_5v5_Map.rbxmx"
+      }
+    },
     "ReplicatedStorage": {
       "$className": "ReplicatedStorage",
       "Shared": {

@@ -93,6 +93,7 @@ function WeaponBuilder.AddPart(model: Instance, root: BasePart, spec: PartSpec):
 	part.Material = spec.Material
 	part.Reflectance = spec.Reflectance or 0
 	part.Transparency = spec.Transparency or 0
+	part.Anchored = true
 	part.CanCollide = false
 	part.CanTouch = false
 	part.CanQuery = false
@@ -705,6 +706,21 @@ local AIM_OFFSETS: { [string]: CFrame } = {
 	M1014_Shotgun = CFrame.new(0, 0.80, -1.00),
 	M249_MachineGun = CFrame.new(0, 1.16, -0.32),
 	G19X_Pistol = CFrame.new(0, 0.70, -0.24),
+	M67_Frag = CFrame.new(0, 0.35, 0),
+	KABAR_Knife = CFrame.new(0, 0.95, 0),
+	Tactical_Bat = CFrame.new(0, 1.35, 0),
+}
+
+local ROOT_OFFSETS: { [string]: CFrame } = {
+	M4A1_Carbine = CFrame.new(0, 0.48, -0.25),
+	MP5_Tactical = CFrame.new(0, 0.45, -0.22),
+	AWM_Sniper = CFrame.new(0, 0.50, -0.45),
+	M1014_Shotgun = CFrame.new(0, 0.45, -0.35),
+	M249_MachineGun = CFrame.new(0, 0.48, -0.28),
+	G19X_Pistol = CFrame.new(0, 0.36, -0.10),
+	M67_Frag = CFrame.new(0, 0.20, 0),
+	KABAR_Knife = CFrame.new(0, 0.55, 0) * CFrame.Angles(math.rad(-25), 0, 0),
+	Tactical_Bat = CFrame.new(0, 0.85, 0) * CFrame.Angles(math.rad(-20), 0, 0),
 }
 
 function WeaponBuilder.CreateBaseModel(weaponKey: string, gripCFrame: CFrame, kind: BuildKind?): (Model, BasePart)
@@ -725,7 +741,9 @@ function WeaponBuilder.CreateBaseModel(weaponKey: string, gripCFrame: CFrame, ki
 	local handle = Instance.new("Part")
 	handle.Name = if buildKind == "Viewmodel" then "WeaponMesh" else "Handle"
 	handle.Size = Vector3.new(0.20, 0.55, 0.25)
+	handle.CFrame = CFrame.identity
 	handle.Transparency = 1
+	handle.Anchored = true
 	handle.CanCollide = false
 	handle.CanTouch = false
 	handle.CanQuery = false
@@ -737,11 +755,14 @@ function WeaponBuilder.CreateBaseModel(weaponKey: string, gripCFrame: CFrame, ki
 		return model, handle
 	end
 
+	local rootOffset = ROOT_OFFSETS[weaponKey] or CFrame.new(0, 0.48, -0.25)
+
 	local rootPart = Instance.new("Part")
 	rootPart.Name = "RootPart"
 	rootPart.Size = Vector3.new(0.2, 0.2, 0.2)
+	rootPart.CFrame = handle.CFrame * rootOffset
 	rootPart.Transparency = 1
-	rootPart.Anchored = false
+	rootPart.Anchored = true
 	rootPart.CanCollide = false
 	rootPart.CanTouch = false
 	rootPart.CanQuery = false
@@ -753,7 +774,7 @@ function WeaponBuilder.CreateBaseModel(weaponKey: string, gripCFrame: CFrame, ki
 	weaponMotor.Name = "WeaponMotor"
 	weaponMotor.Part0 = rootPart
 	weaponMotor.Part1 = handle
-	weaponMotor.C0 = gripCFrame:Inverse()
+	weaponMotor.C0 = rootOffset:Inverse()
 	weaponMotor.C1 = CFrame.identity
 	weaponMotor.Parent = rootPart
 
@@ -761,11 +782,12 @@ function WeaponBuilder.CreateBaseModel(weaponKey: string, gripCFrame: CFrame, ki
 	aimPart.Name = "AimPart"
 	aimPart.Size = Vector3.new(0.1, 0.1, 0.1)
 	aimPart.Transparency = 1
+	aimPart.Anchored = true
 	aimPart.CanCollide = false
 	aimPart.CanTouch = false
 	aimPart.CanQuery = false
 	aimPart.Massless = true
-	aimPart.CFrame = handle.CFrame * (AIM_OFFSETS[weaponKey] or CFrame.identity)
+	aimPart.CFrame = handle.CFrame * (AIM_OFFSETS[weaponKey] or CFrame.new(0, 0.85, -0.25))
 	aimPart.Parent = handle
 
 	local aimWeld = Instance.new("WeldConstraint")
@@ -3477,6 +3499,17 @@ local CONSTRUCTORS: { [string]: (kind: BuildKind?) -> Model } = {
 	M67_Frag = WeaponBuilder.BuildM67Grenade,
 	KABAR_Knife = WeaponBuilder.BuildCombatKnife,
 	Tactical_Bat = WeaponBuilder.BuildTacticalBat,
+	-- Starter & Economy weapon aliases mapped to 100+ part CAD constructors
+	VORTEX_SMG = WeaponBuilder.BuildM4A1,
+	HELIOS_RAIL = WeaponBuilder.BuildAWMSniper,
+	wpn_pulse_pistol = WeaponBuilder.BuildG19XPistol,
+	wpn_burst_machine_pistol = WeaponBuilder.BuildMP5,
+	wpn_ion_revolver = WeaponBuilder.BuildG19XPistol,
+	wpn_vector_smg = WeaponBuilder.BuildMP5,
+	wpn_scatter_shotgun = WeaponBuilder.BuildM1014Shotgun,
+	wpn_cobalt_carbine = WeaponBuilder.BuildM4A1,
+	wpn_vandal_rail_rifle = WeaponBuilder.BuildM4A1,
+	wpn_helix_sniper = WeaponBuilder.BuildAWMSniper,
 }
 
 local templateCache: { [string]: Model } = {}

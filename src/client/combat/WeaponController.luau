@@ -15,7 +15,7 @@ local CrosshairModule = require(script.Parent.Parent:WaitForChild("ui"):WaitForC
 local ViewmodelController = require(script.Parent.Parent:WaitForChild("viewmodel"):WaitForChild("ViewmodelController"))
 
 local LOCAL_PLAYER = Players.LocalPlayer
-local DEFAULT_WEAPON_ID = "VORTEX_SMG"
+local DEFAULT_WEAPON_ID = "M4A1_Carbine"
 local OPTIMISTIC_HIT_DEDUP_WINDOW = 0.5
 
 type WeaponStats = {
@@ -405,7 +405,14 @@ function WeaponController.SwitchWeapon(weaponId: string)
 	elseif type(vmController.SetWeapon) == "function" then
 		vmController.SetWeapon(weaponId)
 	end
+
+	local reloadRemote = ReplicatedStorage:FindFirstChild("ReloadWeaponEvent")
+	if reloadRemote and reloadRemote:IsA("RemoteEvent") then
+		reloadRemote:FireServer(weaponId)
+	end
 end
+
+WeaponController.EquipWeapon = WeaponController.SwitchWeapon
 
 function WeaponController.Init()
 	if isInitialized then
