@@ -44,6 +44,7 @@ end
 local ArenaGenerator = resolveArenaGenerator()
 local CharacterService = resolveOptionalService("CharacterService")
 local LoadoutService = resolveOptionalService("LoadoutService")
+local EconomyManager = resolveOptionalService("EconomyManager")
 
 local DEFAULT_WEAPON_ID = "VORTEX_SMG"
 local RESPAWN_DELAY = 3.0
@@ -250,6 +251,11 @@ local function onRequestDeploy(player: Player, weaponId: unknown)
 	end
 
 	local validWeapon = weaponId :: string
+	local economyPrimary = player:GetAttribute("PrimaryWeaponKey") :: string?
+	if type(economyPrimary) == "string" and economyPrimary ~= "" and isValidWeaponId(economyPrimary) then
+		validWeapon = economyPrimary
+	end
+
 	initPlayerAttributes(player)
 	player:SetAttribute("SelectedWeapon", validWeapon)
 	player:SetAttribute("InArena", true)
@@ -310,6 +316,12 @@ function MatchService.Init()
 	end
 
 	RunService.Heartbeat:Connect(updateTopBhopSpeeds)
+
+	if type(EconomyManager) == "table" and type(EconomyManager.BeginRoundBuyPhase) == "function" then
+		task.defer(function()
+			pcall(EconomyManager.BeginRoundBuyPhase, false)
+		end)
+	end
 end
 
 return table.freeze(MatchService)

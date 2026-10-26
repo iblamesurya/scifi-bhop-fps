@@ -60,6 +60,18 @@ do
 	end
 end
 
+local EconomyClient: any = nil
+do
+	local combatFolder = clientRoot:FindFirstChild("combat")
+	local ecModule = if combatFolder then combatFolder:FindFirstChild("EconomyClient") else nil
+	if ecModule and ecModule:IsA("ModuleScript") then
+		local ok, mod = pcall(require, ecModule)
+		if ok then
+			EconomyClient = mod
+		end
+	end
+end
+
 local LobbyApp = {}
 
 -- Palette & Styling Constants
@@ -126,6 +138,7 @@ local weaponCardRefs: { [string]: { Card: Frame, Stroke: UIStroke, Badge: TextLa
 local recordRowLabels: { TextLabel } = {}
 local toggleStrokeRef: UIStroke? = nil
 local toggleStateLabelRef: TextLabel? = nil
+local subtitleLabelRef: TextLabel? = nil
 
 local function buildWeaponStatsText(option: WeaponOption): string
 	local entry = WeaponData[option.Id] or (WeaponData.Weapons and WeaponData.Weapons[option.Id])
@@ -280,6 +293,35 @@ local function refreshSpeedRecords()
 	end
 end
 
+local function refreshEconomySubtitle()
+	if not subtitleLabelRef then
+		return
+	end
+	local credits = 800
+	local flux = 0
+	local armor = 0
+	if EconomyClient and type(EconomyClient.GetCredits) == "function" then
+		credits = EconomyClient.GetCredits()
+		flux = EconomyClient.GetFlux()
+		armor, _ = EconomyClient.GetArmor()
+	else
+		local rawCreds = LocalPlayer:GetAttribute("MatchCredits")
+		if type(rawCreds) == "number" then
+			credits = rawCreds
+		end
+		local rawAP = LocalPlayer:GetAttribute("ArmorPoints")
+		if type(rawAP) == "number" then
+			armor = rawAP
+		end
+	end
+	subtitleLabelRef.Text = string.format(
+		"CREDITS: $%04d | FLUX: %d | SHIELD: %02d AP // TOGGLE [KEYBIND: M / B]",
+		credits,
+		flux,
+		armor
+	)
+end
+
 local function syncLobbyState()
 	local inArena = LocalPlayer:GetAttribute("InArena") == true
 	local showLobby = (not inArena) or manualOverlayOpen
@@ -293,6 +335,7 @@ local function syncLobbyState()
 		UserInputService.MouseIconEnabled = true
 		updateWeaponSelectionVisuals()
 		refreshSpeedRecords()
+		refreshEconomySubtitle()
 	else
 		UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
 		UserInputService.MouseIconEnabled = false
@@ -368,6 +411,8 @@ function LobbyApp.Init()
 	subtitleLabel.TextColor3 = COLOR_TEXT_SUB
 	subtitleLabel.TextXAlignment = Enum.TextXAlignment.Left
 	subtitleLabel.Parent = mainPanel
+	subtitleLabelRef = subtitleLabel
+	refreshEconomySubtitle()
 
 	-- =========================================================================
 	-- LEFT COLUMN: PRIMARY WEAPON SELECTION (VORTEX_SMG / HELIOS_RAIL)
@@ -606,6 +651,15 @@ function LobbyApp.Init()
 		end
 		syncLobbyState()
 	end)
+	LocalPlayer:GetAttributeChangedSignal("ArmorPoints"):Connect(refreshEconomySubtitle)
+	LocalPlayer:GetAttributeChangedSignal("MatchCredits"):Connect(refreshEconomySubtitle)
+
+	if EconomyClient and type(EconomyClient.OnStateChanged) == "table" then
+		table.insert(EconomyClient.OnStateChanged, function()
+			refreshEconomySubtitle()
+		end)
+	end
+
 	syncLobbyState()
 
 	RunService.Heartbeat:Connect(function()

@@ -30,9 +30,14 @@ local MatchService = requireServerModule(
 	"MatchService",
 	if script:FindFirstChild("match") then script.match:FindFirstChild("MatchService") else nil
 )
+local EconomyManager = requireServerModule(
+	"EconomyManager",
+	if script:FindFirstChild("economy") then script.economy:FindFirstChild("EconomyManager") else nil
+)
 
 ArenaGenerator.Init()
 HitboxHistory.Init()
 CombatValidator.Init()
 StanceReplicator.Init()
 MatchService.Init()
+EconomyManager.Init()

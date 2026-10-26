@@ -11,6 +11,25 @@ local successLoadout, LoadoutService = pcall(function()
 	return require(script.Parent.LoadoutService)
 end)
 
+local successEconomy, EconomyManager = pcall(function()
+	local serverRoot = script.Parent.Parent
+	local economyFolder = serverRoot:FindFirstChild("economy")
+	local emModule = if economyFolder then economyFolder:FindFirstChild("EconomyManager") else nil
+	if emModule and emModule:IsA("ModuleScript") then
+		return require(emModule)
+	end
+	return nil
+end)
+
+local successEconomyConfig, EconomyConfig = pcall(function()
+	local configs = ReplicatedStorage:WaitForChild("Shared"):WaitForChild("configs")
+	local ecModule = configs:FindFirstChild("EconomyConfig")
+	if ecModule and ecModule:IsA("ModuleScript") then
+		return require(ecModule)
+	end
+	return nil
+end)
+
 local CombatValidator = {}
 
 local fireEvent: RemoteEvent
@@ -232,17 +251,54 @@ function CombatValidator.Init()
 					end
 
 					local healthBefore = humanoid.Health
-					humanoid:TakeDamage(damage)
+					local victimPlayer = Players:GetPlayerFromCharacter(hitModel)
+					local effectiveDamage = damage
+					if victimPlayer and successEconomy and EconomyManager and type(EconomyManager.AbsorbDamageWithArmor) == "function" then
+						local absorbResult = EconomyManager.AbsorbDamageWithArmor(victimPlayer, damage, shooter)
+						if absorbResult and type(absorbResult.HealthDamage) == "number" then
+							effectiveDamage = absorbResult.HealthDamage
+						end
+					end
+
+					humanoid:TakeDamage(effectiveDamage)
 					if healthBefore > 0 and humanoid.Health <= 0 then
 						local currentKills = (shooter:GetAttribute("Kills") :: number?) or 0
 						shooter:SetAttribute("Kills", currentKills + 1)
+
+						if victimPlayer and successEconomy and EconomyManager and type(EconomyManager.RecordElimination) == "function" then
+							local shooterChar = shooter.Character
+							local hrp = if shooterChar then shooterChar:FindFirstChild("HumanoidRootPart") :: BasePart? else nil
+							local vel = if hrp then hrp.AssemblyLinearVelocity else Vector3.zero
+							local horizSpeed = Vector3.new(vel.X, 0, vel.Z).Magnitude
+							local isAirborne = math.abs(vel.Y) > 1.5
+
+							local rawWeaponId = weaponConfig.Id or weaponConfig.WeaponId or 10
+							local weaponNumId = 10
+							if type(rawWeaponId) == "number" then
+								weaponNumId = rawWeaponId
+							elseif successEconomyConfig and EconomyConfig and type(EconomyConfig.ItemsByKey) == "table" then
+								local foundDef = EconomyConfig.ItemsByKey[tostring(rawWeaponId)]
+								if foundDef and foundDef.Id then
+									weaponNumId = foundDef.Id
+								end
+							end
+
+							EconomyManager.RecordElimination(
+								shooter,
+								victimPlayer,
+								weaponNumId,
+								hitPart.Name == "Head",
+								horizSpeed,
+								isAirborne
+							)
+						end
 					end
 
 					hitConfirmEvent:FireClient(shooter, {
 						hitPosition = rayResult.Position,
 						hitPart = hitPart,
 						isHeadshot = (hitPart.Name == "Head"),
-						damage = damage,
+						damage = effectiveDamage,
 					})
 				end
 			end

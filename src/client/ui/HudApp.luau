@@ -36,6 +36,19 @@ do
 	end
 end
 
+-- Shared EconomyClient lookup
+local EconomyClient: any = nil
+do
+	local combatFolder = clientRoot:FindFirstChild("combat")
+	local ecModule = if combatFolder then combatFolder:FindFirstChild("EconomyClient") else nil
+	if ecModule and ecModule:IsA("ModuleScript") then
+		local ok, data = pcall(require, ecModule)
+		if ok and type(data) == "table" then
+			EconomyClient = data
+		end
+	end
+end
+
 local HudApp = {}
 
 -- Glassmorphic Visual Constants
@@ -82,6 +95,13 @@ local killsValueLabel: TextLabel? = nil
 local deathsValueLabel: TextLabel? = nil
 local peakSpeedValueLabel: TextLabel? = nil
 local telemetryStroke: UIStroke? = nil
+
+-- Top-Right Economy Badge Refs
+local creditsValueLabel: TextLabel? = nil
+local armorValueLabel: TextLabel? = nil
+local fluxValueLabel: TextLabel? = nil
+local buyPhaseBadgeLabel: TextLabel? = nil
+local economyStroke: UIStroke? = nil
 
 local humanoidConnections: { RBXScriptConnection } = {}
 
@@ -260,6 +280,43 @@ local function updateTopRightTelemetryBadge()
 	end
 end
 
+local function updateEconomyDisplay()
+	local credits = 800
+	local armor = 0
+	local flux = 0
+	local buyOpen = false
+
+	if EconomyClient then
+		credits = EconomyClient.GetCredits()
+		armor, _ = EconomyClient.GetArmor()
+		flux = EconomyClient.GetFlux()
+		buyOpen = EconomyClient.IsBuyPhaseOpen()
+	else
+		local rawCredits = LocalPlayer:GetAttribute("MatchCredits")
+		if type(rawCredits) == "number" then
+			credits = rawCredits
+		end
+		local rawArmor = LocalPlayer:GetAttribute("ArmorPoints")
+		if type(rawArmor) == "number" then
+			armor = rawArmor
+		end
+	end
+
+	if creditsValueLabel then
+		creditsValueLabel.Text = string.format("$%04d", credits)
+	end
+	if armorValueLabel then
+		armorValueLabel.Text = if armor > 0 then string.format("%02d AP", armor) else "-- AP"
+		armorValueLabel.TextColor3 = if armor > 0 then COLOR_NEON_CYAN else COLOR_TEXT_MUTED
+	end
+	if fluxValueLabel then
+		fluxValueLabel.Text = string.format("%d FLUX", flux)
+	end
+	if buyPhaseBadgeLabel then
+		buyPhaseBadgeLabel.Visible = buyOpen
+	end
+end
+
 local function bindCharacter(character: Model?)
 	for _, conn in ipairs(humanoidConnections) do
 		conn:Disconnect()
@@ -345,6 +402,9 @@ local function updateHudTelemetry()
 			updateHealthDisplay(humanoid.Health, humanoid.MaxHealth)
 		end
 	end
+
+	-- 5. Live Economy & Armor Telemetry
+	updateEconomyDisplay()
 end
 
 function HudApp.SetVisible(visible: boolean)
@@ -471,6 +531,118 @@ function HudApp.Init()
 	peakVal.TextXAlignment = Enum.TextXAlignment.Right
 	peakVal.Parent = telemetryCard
 	peakSpeedValueLabel = peakVal
+
+	-- =========================================================================
+	-- 1B. TOP-RIGHT ECONOMY & SHIELD BADGE (MATCH CREDITS / EXO-SHIELD / FLUX)
+	-- =========================================================================
+	local economyCard, eStroke = createGlassCard(
+		"EconomyBadgeCard",
+		screenGui,
+		UDim2.fromOffset(276, 44),
+		UDim2.new(1, -32, 0, 84),
+		Vector2.new(1, 0)
+	)
+	economyStroke = eStroke
+
+	local credHeader = Instance.new("TextLabel")
+	credHeader.Name = "CreditsHeader"
+	credHeader.BackgroundTransparency = 1
+	credHeader.Position = UDim2.fromOffset(14, 5)
+	credHeader.Size = UDim2.fromOffset(70, 12)
+	credHeader.Font = Enum.Font.Code
+	credHeader.Text = "CREDITS"
+	credHeader.TextSize = 10
+	credHeader.TextColor3 = COLOR_TEXT_MUTED
+	credHeader.TextXAlignment = Enum.TextXAlignment.Left
+	credHeader.Parent = economyCard
+
+	local credVal = Instance.new("TextLabel")
+	credVal.Name = "CreditsValue"
+	credVal.BackgroundTransparency = 1
+	credVal.Position = UDim2.fromOffset(14, 18)
+	credVal.Size = UDim2.fromOffset(70, 20)
+	credVal.Font = Enum.Font.Code
+	credVal.Text = "$0800"
+	credVal.TextSize = 16
+	credVal.TextColor3 = COLOR_NEON_CYAN
+	credVal.TextXAlignment = Enum.TextXAlignment.Left
+	credVal.Parent = economyCard
+	creditsValueLabel = credVal
+
+	local armorHeader = Instance.new("TextLabel")
+	armorHeader.Name = "ArmorHeader"
+	armorHeader.BackgroundTransparency = 1
+	armorHeader.Position = UDim2.fromOffset(92, 5)
+	armorHeader.Size = UDim2.fromOffset(70, 12)
+	armorHeader.Font = Enum.Font.Code
+	armorHeader.Text = "EXO-SHIELD"
+	armorHeader.TextSize = 10
+	armorHeader.TextColor3 = COLOR_TEXT_MUTED
+	armorHeader.TextXAlignment = Enum.TextXAlignment.Left
+	armorHeader.Parent = economyCard
+
+	local armorVal = Instance.new("TextLabel")
+	armorVal.Name = "ArmorValue"
+	armorVal.BackgroundTransparency = 1
+	armorVal.Position = UDim2.fromOffset(92, 18)
+	armorVal.Size = UDim2.fromOffset(70, 20)
+	armorVal.Font = Enum.Font.Code
+	armorVal.Text = "-- AP"
+	armorVal.TextSize = 16
+	armorVal.TextColor3 = COLOR_TEXT_MUTED
+	armorVal.TextXAlignment = Enum.TextXAlignment.Left
+	armorVal.Parent = economyCard
+	armorValueLabel = armorVal
+
+	local fluxHeader = Instance.new("TextLabel")
+	fluxHeader.Name = "FluxHeader"
+	fluxHeader.BackgroundTransparency = 1
+	fluxHeader.Position = UDim2.new(1, -94, 0, 5)
+	fluxHeader.Size = UDim2.fromOffset(80, 12)
+	fluxHeader.Font = Enum.Font.Code
+	fluxHeader.Text = "ACCOUNT FLUX"
+	fluxHeader.TextSize = 10
+	fluxHeader.TextColor3 = COLOR_TEXT_MUTED
+	fluxHeader.TextXAlignment = Enum.TextXAlignment.Right
+	fluxHeader.Parent = economyCard
+
+	local fluxVal = Instance.new("TextLabel")
+	fluxVal.Name = "FluxValue"
+	fluxVal.BackgroundTransparency = 1
+	fluxVal.Position = UDim2.new(1, -94, 0, 18)
+	fluxVal.Size = UDim2.fromOffset(80, 20)
+	fluxVal.Font = Enum.Font.Code
+	fluxVal.Text = "00 FLUX"
+	fluxVal.TextSize = 16
+	fluxVal.TextColor3 = COLOR_TEXT_PRIMARY
+	fluxVal.TextXAlignment = Enum.TextXAlignment.Right
+	fluxVal.Parent = economyCard
+	fluxValueLabel = fluxVal
+
+	local buyBadge = Instance.new("TextLabel")
+	buyBadge.Name = "BuyPhaseBadge"
+	buyBadge.BackgroundTransparency = 0.2
+	buyBadge.BackgroundColor3 = Color3.fromRGB(15, 25, 38)
+	buyBadge.Position = UDim2.new(1, -32, 0, 134)
+	buyBadge.Size = UDim2.fromOffset(276, 22)
+	buyBadge.AnchorPoint = Vector2.new(1, 0)
+	buyBadge.Font = Enum.Font.Code
+	buyBadge.Text = "BUY PHASE ACTIVE // PRESS [B] OR [M]"
+	buyBadge.TextSize = 11
+	buyBadge.TextColor3 = COLOR_OVERDRIVE_ORANGE
+	buyBadge.Visible = false
+	buyBadge.Parent = screenGui
+
+	local buyBadgeCorner = Instance.new("UICorner")
+	buyBadgeCorner.CornerRadius = UDim.new(0, 4)
+	buyBadgeCorner.Parent = buyBadge
+
+	local buyBadgeStroke = Instance.new("UIStroke")
+	buyBadgeStroke.Color = COLOR_OVERDRIVE_ORANGE
+	buyBadgeStroke.Thickness = 1
+	buyBadgeStroke.Transparency = 0.4
+	buyBadgeStroke.Parent = buyBadge
+	buyPhaseBadgeLabel = buyBadge
 
 	-- =========================================================================
 	-- 2. BOTTOM-CENTER GLASSMORPHIC SPEEDOMETER
@@ -668,6 +840,15 @@ function HudApp.Init()
 	LocalPlayer:GetAttributeChangedSignal("Deaths"):Connect(updateTopRightTelemetryBadge)
 	LocalPlayer:GetAttributeChangedSignal("TopBhopSpeed"):Connect(updateTopRightTelemetryBadge)
 	updateTopRightTelemetryBadge()
+
+	if EconomyClient and type(EconomyClient.OnStateChanged) == "table" then
+		table.insert(EconomyClient.OnStateChanged, function()
+			updateEconomyDisplay()
+		end)
+	end
+	LocalPlayer:GetAttributeChangedSignal("ArmorPoints"):Connect(updateEconomyDisplay)
+	LocalPlayer:GetAttributeChangedSignal("MatchCredits"):Connect(updateEconomyDisplay)
+	updateEconomyDisplay()
 
 	RunService.RenderStepped:Connect(updateHudTelemetry)
 

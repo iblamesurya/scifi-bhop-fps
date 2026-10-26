@@ -33,6 +33,10 @@ local Audio = table.freeze({
 		HitmarkerHeadshot = "rbxassetid://160432334",
 		KillConfirm = "rbxassetid://160432334",
 		WeaponSwitch = "rbxassetid://130113370",
+		SFX_UI_PurchaseConfirm = "rbxassetid://160432334",
+		SFX_UI_PurchaseDenied = "rbxassetid://130113370",
+		SFX_UI_ItemRefund = "rbxassetid://130113370",
+		SFX_HUD_OverdriveKillBounty = "rbxassetid://160432334",
 	}),
 })
 
@@ -52,6 +56,19 @@ local UISprites = table.freeze({
 		Railgun = "rbxassetid://0",
 		PlasmaShotgun = "rbxassetid://0",
 		IonSidearm = "rbxassetid://0",
+		Sprite_Wpn_PulsePistol = "rbxassetid://0",
+		Sprite_Wpn_TachyonAuto9 = "rbxassetid://0",
+		Sprite_Wpn_IonRevolver = "rbxassetid://0",
+		Sprite_Wpn_VectorSMG = "rbxassetid://0",
+		Sprite_Wpn_ScatterShotgun = "rbxassetid://0",
+		Sprite_Wpn_CobaltCarbine = "rbxassetid://0",
+		Sprite_Wpn_VandalRailRifle = "rbxassetid://0",
+		Sprite_Wpn_HelixSniper = "rbxassetid://0",
+		Sprite_Armor_LightExo = "rbxassetid://0",
+		Sprite_Armor_HeavyExo = "rbxassetid://0",
+		Sprite_Util_ImpulseGrenade = "rbxassetid://0",
+		Sprite_Util_ArcCell = "rbxassetid://0",
+		Sprite_Util_PhaseStim = "rbxassetid://0",
 	}),
 })
 
@@ -68,6 +85,7 @@ local NetworkEvents = table.freeze({
 	HitConfirmEvent = "HitConfirmEvent",
 	StanceSyncBuffer = "StanceSyncBuffer",
 	RequestDeploy = "RequestDeploy",
+	EconomyPacketRemote = "EconomyPacketRemote",
 
 	-- Legacy Aliases
 	ShotFired = "FireWeaponBuffer",
