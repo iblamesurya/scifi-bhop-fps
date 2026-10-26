@@ -55,6 +55,12 @@ local UISprites = table.freeze({
 	}),
 })
 
+-- Particle textures used by procedural weapon builders (WeaponBuilder.AddMuzzleEffects)
+local Textures = table.freeze({
+	MuzzleFlash = "rbxassetid://241650934",
+	BarrelSmoke = "rbxassetid://243660364",
+})
+
 local NetworkEvents = table.freeze({
 	-- Standardized Remote Names
 	FireWeaponBuffer = "FireWeaponBuffer",
@@ -265,9 +271,32 @@ local function findAssetInstance(categoryFolder: string, assetName: string): Mod
 	return nil
 end
 
+-- Procedural CAD arsenal fallback (WeaponBuilder). Required lazily because WeaponBuilder itself
+-- requires AssetRegistry for its particle textures.
+local function tryBuildArsenalModel(assetKey: string, kind: string): Model?
+	local sharedFolder = (script.Parent :: Instance).Parent :: Instance
+	local weaponsFolder = sharedFolder:FindFirstChild("weapons")
+	local builderModule = if weaponsFolder then weaponsFolder:FindFirstChild("WeaponBuilder") else nil
+	if not builderModule or not builderModule:IsA("ModuleScript") then
+		return nil
+	end
+
+	local ok, builder = pcall(require, builderModule)
+	if not ok or type(builder) ~= "table" or not builder.HasWeapon(assetKey) then
+		return nil
+	end
+
+	local template = builder.GetTemplate(assetKey, kind) :: Model?
+	if template then
+		return template:Clone()
+	end
+	return nil
+end
+
 local AssetRegistry = {
 	Audio = Audio,
 	UISprites = UISprites,
+	Textures = Textures,
 	NetworkEvents = NetworkEvents,
 
 	GetViewmodel = function(viewmodelKey: string): Model
@@ -275,7 +304,7 @@ local AssetRegistry = {
 		if template then
 			return template:Clone()
 		end
-		return createProceduralViewmodel(viewmodelKey)
+		return tryBuildArsenalModel(viewmodelKey, "Viewmodel") or createProceduralViewmodel(viewmodelKey)
 	end,
 
 	GetWorldmodel = function(worldmodelKey: string): Model
@@ -283,7 +312,7 @@ local AssetRegistry = {
 		if template then
 			return template:Clone()
 		end
-		return createProceduralWorldmodel(worldmodelKey)
+		return tryBuildArsenalModel(worldmodelKey, "Worldmodel") or createProceduralWorldmodel(worldmodelKey)
 	end,
 
 	GetCharacterRig = function(rigKey: string?): Model

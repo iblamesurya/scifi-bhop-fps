@@ -41,6 +41,21 @@ export type WeaponStats = {
 	FireSoundKey: string,
 	ReloadSoundKey: string,
 	IconKey: string,
+
+	-- Optional arsenal metadata (see ARSENAL_SPECS)
+	Category: string?,
+	SubClass: string?,
+	FireMode: string?,
+	ReserveAmmo: number?,
+	TacticalReloadTime: number?,
+	SpreadHipRad: number?,
+	SpreadADSRad: number?,
+	IsSniperScope: boolean?,
+	BlastRadius: number?,
+	FuseTime: number?,
+	ThrowVelocity: number?,
+	MeleeCooldown: number?,
+	KnockbackForce: number?,
 }
 
 export type WeaponMap = { [string]: WeaponStats }
@@ -197,21 +212,377 @@ local IonSidearmStats: WeaponStats = table.freeze({
 	IconKey = "IonSidearm",
 })
 
-local Weapons: WeaponMap = table.freeze({
+-- =============================================================================
+-- 9-WEAPON ARSENAL (M4A1 / MP5 / AWM / M1014 / M249 / G19X / M67 / KA-BAR / Slugger)
+-- Integrated from roblox_fps_weapon_suite.luau (v4.0). Raw specs below are verbatim;
+-- they are converted to full WeaponStats entries by buildArsenalStats().
+-- =============================================================================
+
+export type ArsenalSpec = {
+	Name: string,
+	SlotOrder: number,
+	Category: "Gun" | "Grenade" | "Melee",
+	SubClass: "AR" | "SMG" | "Sniper" | "Shotgun" | "MachineGun" | "Pistol" | "Grenade" | "Melee",
+	FireMode: "Auto" | "Semi" | "Bolt" | "Pump" | "Thrown" | "Melee",
+	Damage: number,
+	HeadshotMultiplier: number,
+	PelletCount: number,
+	RPM: number,
+	MagCapacity: number,
+	ReserveAmmo: number,
+	ReloadTime: number,
+	TacticalReloadTime: number,
+	Range: number,
+	SpreadHip: number,
+	SpreadADS: number,
+	RecoilPitch: number,
+	RecoilYaw: number,
+	RecoilKickback: number,
+	ADSFieldOfView: number,
+	IsSniperScope: boolean?,
+	EquipTime: number,
+	BlastRadius: number?,
+	FuseTime: number?,
+	ThrowVelocity: number?,
+	MeleeCooldown: number?,
+	KnockbackForce: number?,
+}
+
+local ARSENAL_SPECS: { [string]: ArsenalSpec } = {
+	["M4A1_Carbine"] = {
+		Name = "M4A1 SOPMOD Block II",
+		SlotOrder = 1,
+		Category = "Gun",
+		SubClass = "AR",
+		FireMode = "Auto",
+		Damage = 28,
+		HeadshotMultiplier = 1.85,
+		PelletCount = 1,
+		RPM = 780,
+		MagCapacity = 30,
+		ReserveAmmo = 150,
+		ReloadTime = 2.35,
+		TacticalReloadTime = 1.85,
+		Range = 650,
+		SpreadHip = 2.5,
+		SpreadADS = 0.20,
+		RecoilPitch = 1.45,
+		RecoilYaw = 0.55,
+		RecoilKickback = 0.22,
+		ADSFieldOfView = 50,
+		EquipTime = 0.45,
+	},
+	["MP5_Tactical"] = {
+		Name = "HK MP5A3 Tactical",
+		SlotOrder = 2,
+		Category = "Gun",
+		SubClass = "SMG",
+		FireMode = "Auto",
+		Damage = 21,
+		HeadshotMultiplier = 1.65,
+		PelletCount = 1,
+		RPM = 920,
+		MagCapacity = 35,
+		ReserveAmmo = 175,
+		ReloadTime = 1.95,
+		TacticalReloadTime = 1.50,
+		Range = 380,
+		SpreadHip = 1.70,
+		SpreadADS = 0.30,
+		RecoilPitch = 0.95,
+		RecoilYaw = 0.65,
+		RecoilKickback = 0.15,
+		ADSFieldOfView = 56,
+		EquipTime = 0.32,
+	},
+	["AWM_Sniper"] = {
+		Name = "AWM L115A3 .338 Magnum",
+		SlotOrder = 3,
+		Category = "Gun",
+		SubClass = "Sniper",
+		FireMode = "Bolt",
+		Damage = 105,
+		HeadshotMultiplier = 2.50,
+		PelletCount = 1,
+		RPM = 46,
+		MagCapacity = 5,
+		ReserveAmmo = 30,
+		ReloadTime = 3.10,
+		TacticalReloadTime = 2.45,
+		Range = 1500,
+		SpreadHip = 6.5,
+		SpreadADS = 0.015,
+		RecoilPitch = 4.80,
+		RecoilYaw = 0.85,
+		RecoilKickback = 0.45,
+		ADSFieldOfView = 18,
+		IsSniperScope = true,
+		EquipTime = 0.65,
+	},
+	["M1014_Shotgun"] = {
+		Name = "Benelli M1014 Combat",
+		SlotOrder = 4,
+		Category = "Gun",
+		SubClass = "Shotgun",
+		FireMode = "Pump",
+		Damage = 16,
+		HeadshotMultiplier = 1.60,
+		PelletCount = 8,
+		RPM = 115,
+		MagCapacity = 8,
+		ReserveAmmo = 48,
+		ReloadTime = 2.65,
+		TacticalReloadTime = 2.10,
+		Range = 185,
+		SpreadHip = 5.2,
+		SpreadADS = 3.0,
+		RecoilPitch = 3.60,
+		RecoilYaw = 1.10,
+		RecoilKickback = 0.38,
+		ADSFieldOfView = 55,
+		EquipTime = 0.48,
+	},
+	["M249_MachineGun"] = {
+		Name = "FN M249 Para SAW",
+		SlotOrder = 5,
+		Category = "Gun",
+		SubClass = "MachineGun",
+		FireMode = "Auto",
+		Damage = 31,
+		HeadshotMultiplier = 1.75,
+		PelletCount = 1,
+		RPM = 820,
+		MagCapacity = 100,
+		ReserveAmmo = 300,
+		ReloadTime = 4.20,
+		TacticalReloadTime = 3.60,
+		Range = 700,
+		SpreadHip = 3.8,
+		SpreadADS = 0.45,
+		RecoilPitch = 1.65,
+		RecoilYaw = 0.90,
+		RecoilKickback = 0.26,
+		ADSFieldOfView = 52,
+		EquipTime = 0.70,
+	},
+	["G19X_Pistol"] = {
+		Name = "Glock-19X Custom MOS",
+		SlotOrder = 6,
+		Category = "Gun",
+		SubClass = "Pistol",
+		FireMode = "Semi",
+		Damage = 26,
+		HeadshotMultiplier = 2.00,
+		PelletCount = 1,
+		RPM = 420,
+		MagCapacity = 19,
+		ReserveAmmo = 114,
+		ReloadTime = 1.65,
+		TacticalReloadTime = 1.25,
+		Range = 320,
+		SpreadHip = 1.45,
+		SpreadADS = 0.25,
+		RecoilPitch = 1.35,
+		RecoilYaw = 0.40,
+		RecoilKickback = 0.18,
+		ADSFieldOfView = 60,
+		EquipTime = 0.22,
+	},
+	["M67_Frag"] = {
+		Name = "M67 Frag Grenade",
+		SlotOrder = 7,
+		Category = "Grenade",
+		SubClass = "Grenade",
+		FireMode = "Thrown",
+		Damage = 135,
+		HeadshotMultiplier = 1.0,
+		PelletCount = 1,
+		RPM = 45,
+		MagCapacity = 1,
+		ReserveAmmo = 3,
+		ReloadTime = 1.0,
+		TacticalReloadTime = 1.0,
+		Range = 180,
+		SpreadHip = 0,
+		SpreadADS = 0,
+		RecoilPitch = 0,
+		RecoilYaw = 0,
+		RecoilKickback = 0,
+		ADSFieldOfView = 68,
+		EquipTime = 0.30,
+		BlastRadius = 26,
+		FuseTime = 3.5,
+		ThrowVelocity = 98,
+	},
+	["KABAR_Knife"] = {
+		Name = "KA-BAR USMC 1217 Knife",
+		SlotOrder = 8,
+		Category = "Melee",
+		SubClass = "Melee",
+		FireMode = "Melee",
+		Damage = 55,
+		HeadshotMultiplier = 2.0,
+		PelletCount = 1,
+		RPM = 135,
+		MagCapacity = 1,
+		ReserveAmmo = 1,
+		ReloadTime = 0,
+		TacticalReloadTime = 0,
+		Range = 7.5,
+		SpreadHip = 0,
+		SpreadADS = 0,
+		RecoilPitch = 0,
+		RecoilYaw = 0,
+		RecoilKickback = 0,
+		ADSFieldOfView = 70,
+		EquipTime = 0.25,
+		MeleeCooldown = 0.42,
+		KnockbackForce = 28,
+	},
+	["Tactical_Bat"] = {
+		Name = "Reinforced Slugger Bat",
+		SlotOrder = 9,
+		Category = "Melee",
+		SubClass = "Melee",
+		FireMode = "Melee",
+		Damage = 78,
+		HeadshotMultiplier = 1.75,
+		PelletCount = 1,
+		RPM = 75,
+		MagCapacity = 1,
+		ReserveAmmo = 1,
+		ReloadTime = 0,
+		TacticalReloadTime = 0,
+		Range = 9.5,
+		SpreadHip = 0,
+		SpreadADS = 0,
+		RecoilPitch = 0,
+		RecoilYaw = 0,
+		RecoilKickback = 0,
+		ADSFieldOfView = 70,
+		EquipTime = 0.40,
+		MeleeCooldown = 0.78,
+		KnockbackForce = 68,
+	},
+}
+
+local ARSENAL_ORDER: { string } = table.freeze({
+	"M4A1_Carbine",
+	"MP5_Tactical",
+	"AWM_Sniper",
+	"M1014_Shotgun",
+	"M249_MachineGun",
+	"G19X_Pistol",
+	"M67_Frag",
+	"KABAR_Knife",
+	"Tactical_Bat",
+})
+
+-- Audio/icon keys are placeholders reusing existing registry entries until dedicated assets exist.
+local ARSENAL_PLACEHOLDER_KEYS: { [string]: { Fire: string, Reload: string, Icon: string } } = {
+	AR = { Fire = "PulseRifleFire", Reload = "PulseRifleReload", Icon = "PulseRifle" },
+	SMG = { Fire = "PulseRifleFire", Reload = "PulseRifleReload", Icon = "PulseRifle" },
+	MachineGun = { Fire = "PulseRifleFire", Reload = "PulseRifleReload", Icon = "PulseRifle" },
+	Sniper = { Fire = "RailgunFire", Reload = "RailgunReload", Icon = "Railgun" },
+	Shotgun = { Fire = "PlasmaShotgunFire", Reload = "PlasmaShotgunReload", Icon = "PlasmaShotgun" },
+	Pistol = { Fire = "IonSidearmFire", Reload = "IonSidearmReload", Icon = "IonSidearm" },
+	Grenade = { Fire = "DryFire", Reload = "DryFire", Icon = "IonSidearm" },
+	Melee = { Fire = "DryFire", Reload = "DryFire", Icon = "IonSidearm" },
+}
+
+local ARSENAL_FIRST_NUMERIC_ID = 5
+local ARSENAL_DEFAULT_AIM_SPEED = 15
+
+local function buildArsenalStats(key: string, spec: ArsenalSpec, numericId: number): WeaponStats
+	local placeholders = ARSENAL_PLACEHOLDER_KEYS[spec.SubClass]
+	local isSniper = spec.IsSniperScope == true
+	local recoilPitchRad = math.rad(spec.RecoilPitch)
+	local recoilYawRad = math.rad(spec.RecoilYaw)
+	local kickPos = Vector3.new(0, 0, spec.RecoilKickback)
+
+	return table.freeze({
+		Id = key,
+		WeaponId = numericId,
+		DisplayName = spec.Name,
+		Slot = spec.SlotOrder + ARSENAL_FIRST_NUMERIC_ID - 1,
+		Automatic = spec.FireMode == "Auto",
+		FireRateRPM = spec.RPM,
+		RPM = spec.RPM,
+		FireRate = spec.RPM,
+		FireInterval = 60 / spec.RPM,
+		BaseDamage = spec.Damage,
+		Damage = spec.Damage,
+		HeadshotMultiplier = spec.HeadshotMultiplier,
+		MaxRange = spec.Range,
+		Range = spec.Range,
+		Pellets = spec.PelletCount,
+		-- ADS spread is the tight baseline; hip spread = base + movement penalty.
+		BaseSpreadRad = math.rad(spec.SpreadADS),
+		MoveSpreadPenaltyRad = math.rad(math.max(0, spec.SpreadHip - spec.SpreadADS)),
+		MagazineSize = spec.MagCapacity,
+		MaxAmmo = spec.MagCapacity,
+		ReloadTime = spec.ReloadTime,
+		EquipTime = spec.EquipTime,
+		RecoilKickPos = kickPos,
+		RecoilKick = kickPos,
+		RecoilKickRot = Vector3.new(recoilPitchRad, recoilYawRad, 0),
+		CameraRecoilPitch = recoilPitchRad,
+		CameraRecoilYaw = recoilYawRad,
+		AimSpeed = ARSENAL_DEFAULT_AIM_SPEED,
+		ADSFov = spec.ADSFieldOfView,
+		IsOverdrive = isSniper,
+		TracerColor = if isSniper then Color3.fromRGB(255, 240, 175) else Color3.fromRGB(255, 215, 110),
+		ViewmodelKey = key,
+		WorldmodelKey = key,
+		FireSoundKey = placeholders.Fire,
+		ReloadSoundKey = placeholders.Reload,
+		IconKey = placeholders.Icon,
+
+		Category = spec.Category,
+		SubClass = spec.SubClass,
+		FireMode = spec.FireMode,
+		ReserveAmmo = spec.ReserveAmmo,
+		TacticalReloadTime = spec.TacticalReloadTime,
+		SpreadHipRad = math.rad(spec.SpreadHip),
+		SpreadADSRad = math.rad(spec.SpreadADS),
+		IsSniperScope = spec.IsSniperScope,
+		BlastRadius = spec.BlastRadius,
+		FuseTime = spec.FuseTime,
+		ThrowVelocity = spec.ThrowVelocity,
+		MeleeCooldown = spec.MeleeCooldown,
+		KnockbackForce = spec.KnockbackForce,
+	})
+end
+
+local arsenalStats: { [string]: WeaponStats } = {}
+for _, key in ARSENAL_ORDER do
+	local spec = ARSENAL_SPECS[key]
+	arsenalStats[key] = buildArsenalStats(key, spec, ARSENAL_FIRST_NUMERIC_ID + (spec.SlotOrder - 1))
+end
+
+local weaponMap: WeaponMap = {
 	VORTEX_SMG = VortexSmgStats,
 	PulseRifle = VortexSmgStats,
 	HELIOS_RAIL = HeliosRailStats,
 	Railgun = HeliosRailStats,
 	PlasmaShotgun = PlasmaShotgunStats,
 	IonSidearm = IonSidearmStats,
-})
+}
+for key, stats in arsenalStats do
+	weaponMap[key] = stats
+end
+local Weapons: WeaponMap = table.freeze(weaponMap)
 
-local NumericWeaponLookup: { [number]: WeaponStats } = table.freeze({
+local numericWeaponMap: { [number]: WeaponStats } = {
 	[1] = VortexSmgStats,
 	[2] = HeliosRailStats,
 	[3] = PlasmaShotgunStats,
 	[4] = IonSidearmStats,
-})
+}
+for _, stats in arsenalStats do
+	numericWeaponMap[stats.WeaponId] = stats
+end
+local NumericWeaponLookup: { [number]: WeaponStats } = table.freeze(numericWeaponMap)
 
 local DefaultLoadout = table.freeze({
 	"VORTEX_SMG",
@@ -222,6 +593,7 @@ local DefaultLoadout = table.freeze({
 
 local WeaponData = {
 	Weapons = Weapons,
+	ArsenalOrder = ARSENAL_ORDER,
 	VORTEX_SMG = VortexSmgStats,
 	PulseRifle = VortexSmgStats,
 	HELIOS_RAIL = HeliosRailStats,
@@ -240,5 +612,10 @@ local WeaponData = {
 		return NumericWeaponLookup[id] or VortexSmgStats
 	end,
 }
+
+-- Expose arsenal weapons as top-level keys (CombatValidator iterates top-level entries for ammo state)
+for key, stats in arsenalStats do
+	(WeaponData :: any)[key] = stats
+end
 
 return table.freeze(WeaponData)

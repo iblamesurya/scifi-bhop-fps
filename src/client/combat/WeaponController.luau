@@ -363,6 +363,19 @@ local function attemptFire()
 	end
 end
 
+-- Hotkeys -> index into WeaponData.ArsenalOrder (M4A1, MP5, AWM, M1014, M249, G19X, M67, KA-BAR, Slugger)
+local ARSENAL_HOTKEYS: { [Enum.KeyCode]: number } = {
+	[Enum.KeyCode.Three] = 1,
+	[Enum.KeyCode.Four] = 2,
+	[Enum.KeyCode.Five] = 3,
+	[Enum.KeyCode.Six] = 4,
+	[Enum.KeyCode.Seven] = 5,
+	[Enum.KeyCode.Eight] = 6,
+	[Enum.KeyCode.Nine] = 7,
+	[Enum.KeyCode.Zero] = 8,
+	[Enum.KeyCode.Minus] = 9,
+}
+
 function WeaponController.SwitchWeapon(weaponId: string)
 	if weaponId ~= "VORTEX_SMG" and weaponId ~= "HELIOS_RAIL" then
 		local dataTable = WeaponData :: any
@@ -450,6 +463,12 @@ function WeaponController.Init()
 			WeaponController.SwitchWeapon("VORTEX_SMG")
 		elseif input.KeyCode == Enum.KeyCode.Two then
 			WeaponController.SwitchWeapon("HELIOS_RAIL")
+		elseif ARSENAL_HOTKEYS[input.KeyCode] ~= nil then
+			local arsenalOrder = (WeaponData :: any).ArsenalOrder :: { string }?
+			local arsenalWeaponId = if arsenalOrder then arsenalOrder[ARSENAL_HOTKEYS[input.KeyCode]] else nil
+			if arsenalWeaponId then
+				WeaponController.SwitchWeapon(arsenalWeaponId)
+			end
 		elseif input.KeyCode == Enum.KeyCode.R then
 			startReload()
 		end
