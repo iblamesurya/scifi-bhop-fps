@@ -500,6 +500,82 @@ local function buildSlideTunnels(arenaRoot: Folder)
 	end
 end
 
+local function createTargetDummy(name: string, position: Vector3, parent: Instance): Model
+	local dummy = Instance.new("Model")
+	dummy.Name = name
+
+	local rootPart = createPart({
+		Name = "HumanoidRootPart",
+		Size = Vector3.new(2, 2, 1),
+		CFrame = CFrame.new(position),
+		Color = Color3.fromRGB(50, 60, 80),
+		Transparency = 1,
+		CanCollide = false,
+		Parent = dummy,
+	})
+
+	local torso = createPart({
+		Name = "Torso",
+		Size = Vector3.new(2, 2, 1),
+		CFrame = CFrame.new(position),
+		Color = Color3.fromRGB(35, 45, 60),
+		Material = Enum.Material.SmoothPlastic,
+		Parent = dummy,
+	})
+
+	local head = createPart({
+		Name = "Head",
+		Size = Vector3.new(1.2, 1.2, 1.2),
+		CFrame = CFrame.new(position + Vector3.new(0, 1.6, 0)),
+		Color = Color3.fromRGB(255, 110, 0),
+		Material = Enum.Material.Neon,
+		Parent = dummy,
+	})
+
+	local humanoid = Instance.new("Humanoid")
+	humanoid.Name = "Humanoid"
+	humanoid.MaxHealth = 100
+	humanoid.Health = 100
+	humanoid.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.Viewer
+	humanoid.DisplayName = string.upper(name)
+	humanoid.Parent = dummy
+
+	dummy.PrimaryPart = rootPart
+
+	humanoid.Died:Connect(function()
+		head.Color = Color3.fromRGB(60, 20, 20)
+		torso.Color = Color3.fromRGB(40, 20, 20)
+		task.delay(2.0, function()
+			if dummy.Parent then
+				humanoid.Health = humanoid.MaxHealth
+				head.Color = Color3.fromRGB(255, 110, 0)
+				torso.Color = Color3.fromRGB(35, 45, 60)
+			end
+		end)
+	end)
+
+	dummy.Parent = parent
+	return dummy
+end
+
+local function buildFiringRangeAndDummies(arenaRoot: Folder)
+	local targetFolder = Instance.new("Folder")
+	targetFolder.Name = "FiringRangeTargets"
+	targetFolder.Parent = arenaRoot
+
+	local dummyPositions = {
+		{ Name = "Close_Target_CQC", Pos = Vector3.new(0, 3, -40) },
+		{ Name = "Mid_Target_Rifle_West", Pos = Vector3.new(-32, 6, -90) },
+		{ Name = "Mid_Target_Rifle_East", Pos = Vector3.new(32, 6, -90) },
+		{ Name = "Far_Target_Sniper_NorthDeck", Pos = Vector3.new(0, 24, -196) },
+		{ Name = "Speed_Target_SouthBhop", Pos = Vector3.new(0, 3, 50) },
+	}
+
+	for _, d in ipairs(dummyPositions) do
+		createTargetDummy(d.Name, d.Pos, targetFolder)
+	end
+end
+
 function ArenaGenerator.GetRandomArenaSpawn(): CFrame
 	local spawns = MapConfig.ArenaSpawns
 	if #spawns == 0 then
@@ -526,6 +602,7 @@ function ArenaGenerator.Init()
 	buildDecksAndSightlines(arenaRoot)
 	buildStrafeWalls(arenaRoot)
 	buildSlideTunnels(arenaRoot)
+	buildFiringRangeAndDummies(arenaRoot)
 
 	arenaRoot.Parent = Workspace
 end
