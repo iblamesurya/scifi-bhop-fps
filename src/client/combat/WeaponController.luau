@@ -10,6 +10,7 @@ local ShotPacket = require(Shared:WaitForChild("network"):WaitForChild("ShotPack
 
 local TracerPool = require(script.Parent:WaitForChild("TracerPool"))
 local AudioController = require(script.Parent.Parent:WaitForChild("audio"):WaitForChild("AudioController"))
+local GraphicsController = require(script.Parent.Parent:WaitForChild("graphics"):WaitForChild("GraphicsController"))
 local VFXController = require(script.Parent.Parent:WaitForChild("graphics"):WaitForChild("VFXController"))
 local CrosshairModule = require(script.Parent.Parent:WaitForChild("ui"):WaitForChild("CrosshairModule"))
 local ViewmodelController = require(script.Parent.Parent:WaitForChild("viewmodel"):WaitForChild("ViewmodelController"))
@@ -79,6 +80,7 @@ local WeaponController = {
 	IsReloading = false,
 	OnHitConfirmed = {} :: { (isHeadshot: boolean) -> () },
 	OnWeaponFired = {} :: { () -> () },
+	OnDamageNumberRequested = {} :: { (worldPos: Vector3, damage: number, isHeadshot: boolean) -> () },
 }
 
 local isInitialized = false
@@ -169,14 +171,54 @@ local function fireHitListeners(isHeadshot: boolean)
 	end
 end
 
-local function triggerHitmarkerFeedback(isHeadshot: boolean)
+local function triggerDamageNumberListeners(worldPos: Vector3, damage: number, isHeadshot: boolean)
+	for i = 1, #WeaponController.OnDamageNumberRequested do
+		local cb = WeaponController.OnDamageNumberRequested[i]
+		if cb then
+			cb(worldPos, damage, isHeadshot)
+		end
+	end
+end
+
+-- @motionbykrit: 8-Layer Hit Feel Stack (Hitmarker, Dual-Layered Pitch-Climbing Audio, Hitstop, Camera Kick, B&W Impact Frame, Target White Flash, Floating Damage Number)
+local function triggerHitmarkerFeedback(isHeadshot: boolean, hitModel: Model?, hitWorldPos: Vector3?, damageEstimate: number?)
 	CrosshairModule.TriggerHitmarker(isHeadshot)
-	AudioController.PlayUISound(if isHeadshot then "HitmarkerHeadshot" else "HitmarkerBody")
+	if type((AudioController :: any).PlayLayeredHitSound) == "function" then
+		(AudioController :: any).PlayLayeredHitSound(isHeadshot)
+	else
+		AudioController.PlayUISound(if isHeadshot then "HitmarkerHeadshot" else "HitmarkerBody")
+	end
+
+	if hitModel and type((VFXController :: any).FlashTargetModelWhite) == "function" then
+		(VFXController :: any).FlashTargetModelWhite(hitModel, isHeadshot)
+	end
+
+	if type((ViewmodelController :: any).TriggerHitstop) == "function" then
+		(ViewmodelController :: any).TriggerHitstop(if isHeadshot then 3 else 2, if isHeadshot then 0.032 else 0.015)
+	end
+
+	if type((GraphicsController :: any).TriggerImpactFrame) == "function" then
+		local isHeavyWeapon = WeaponController.CurrentWeaponId == "AWM_Sniper"
+			or WeaponController.CurrentWeaponId == "HELIOS_RAIL"
+			or WeaponController.CurrentWeaponId == "M1014_Shotgun"
+		(GraphicsController :: any).TriggerImpactFrame(isHeadshot or isHeavyWeapon)
+	end
+
+	if hitWorldPos then
+		triggerDamageNumberListeners(hitWorldPos, damageEstimate or (if isHeadshot then 64 else 28), isHeadshot)
+	end
+
 	fireHitListeners(isHeadshot)
 end
 
 local function handleServerHitConfirm(payload: any)
 	local isHeadshot = (typeof(payload) == "table" and payload.isHeadshot == true) or payload == true
+	local hitPos: Vector3? = if typeof(payload) == "table" and typeof(payload.hitPosition) == "Vector3"
+		then payload.hitPosition
+		else nil
+	local dmg: number? = if typeof(payload) == "table" and type(payload.damage) == "number"
+		then payload.damage
+		else nil
 
 	local now = os.clock()
 	if pendingOptimisticHits > 0 and (now - lastOptimisticHitTime) <= OPTIMISTIC_HIT_DEDUP_WINDOW then
@@ -185,37 +227,37 @@ local function handleServerHitConfirm(payload: any)
 	end
 
 	pendingOptimisticHits = 0
-	triggerHitmarkerFeedback(isHeadshot)
+	triggerHitmarkerFeedback(isHeadshot, nil, hitPos, dmg)
 end
 
-local function evaluateHitResult(rayResult: RaycastResult?): (boolean, boolean)
+local function evaluateHitResult(rayResult: RaycastResult?): (boolean, boolean, Model?)
 	if not rayResult or not rayResult.Instance then
-		return false, false
+		return false, false, nil
 	end
 
 	local hitPart = rayResult.Instance
 	local model = hitPart:FindFirstAncestorOfClass("Model")
 	if not model then
-		return false, false
+		return false, false, nil
 	end
 
 	if LOCAL_PLAYER and model == LOCAL_PLAYER.Character then
-		return false, false
+		return false, false, nil
 	end
 
 	local humanoid = model:FindFirstChildOfClass("Humanoid")
 	local hasHitboxTag = hitPart:GetAttribute("IsHitbox") == true or model:GetAttribute("IsTarget") == true
 	if not humanoid and not hasHitboxTag then
-		return false, false
+		return false, false, nil
 	end
 
 	if humanoid and humanoid.Health <= 0 then
-		return false, false
+		return false, false, nil
 	end
 
 	local partName = string.lower(hitPart.Name)
-	local isHeadshot = partName == "head" or string.find(partName, "head", 1, true) ~= nil
-	return true, isHeadshot
+	local isHeadshot = partName == "head" or string.find(partName, "head", 1, true) ~= nil or partName == "weakpointcore"
+	return true, isHeadshot, model
 end
 
 local function sendShotBuffer(packetBuffer: buffer)
@@ -266,7 +308,10 @@ local function startReload()
 end
 
 local function attemptFire()
-	if LOCAL_PLAYER and LOCAL_PLAYER:GetAttribute("InArena") ~= true then
+	local lobbyGui = if LOCAL_PLAYER and LOCAL_PLAYER:FindFirstChild("PlayerGui")
+		then LOCAL_PLAYER.PlayerGui:FindFirstChild("SciFiLobbyGui")
+		else nil
+	if lobbyGui and lobbyGui:IsA("ScreenGui") and lobbyGui.Enabled then
 		return
 	end
 
@@ -351,11 +396,14 @@ local function attemptFire()
 
 	fireWeaponListeners()
 
-	local didHitTarget, isHeadshot = evaluateHitResult(rayResult)
+	local didHitTarget, isHeadshot, hitModel = evaluateHitResult(rayResult)
 	if didHitTarget then
 		pendingOptimisticHits += 1
 		lastOptimisticHitTime = now
-		triggerHitmarkerFeedback(isHeadshot)
+		local rawStats = stats :: any
+		local baseDmg = rawStats.BaseDamage or rawStats.Damage or 28
+		local estDmg = if isHeadshot then math.round(baseDmg * (rawStats.HeadshotMultiplier or 2.0)) else baseDmg
+		triggerHitmarkerFeedback(isHeadshot, hitModel, if rayResult then rayResult.Position else nil, estDmg)
 	end
 
 	if WeaponController.CurrentAmmo <= 0 then
@@ -421,20 +469,23 @@ function WeaponController.Init()
 	isInitialized = true
 
 	TracerPool.Init()
-	fireWeaponRemote = ReplicatedStorage:WaitForChild("FireWeaponBuffer")
+	task.spawn(function()
+		fireWeaponRemote = ReplicatedStorage:FindFirstChild("FireWeaponBuffer")
+			or ReplicatedStorage:WaitForChild("FireWeaponBuffer", 10)
 
-	local hitConfirmRemote = ReplicatedStorage:FindFirstChild("HitConfirmEvent")
-		or ReplicatedStorage:FindFirstChild("HitConfirmed")
-		or ReplicatedStorage:WaitForChild("HitConfirmEvent")
+		local hitConfirmRemote = ReplicatedStorage:FindFirstChild("HitConfirmEvent")
+			or ReplicatedStorage:FindFirstChild("HitConfirmed")
+			or ReplicatedStorage:WaitForChild("HitConfirmEvent", 10)
 
-	if hitConfirmRemote and hitConfirmRemote:IsA("RemoteEvent") then
-		hitConfirmRemote.OnClientEvent:Connect(handleServerHitConfirm)
-	end
+		if hitConfirmRemote and hitConfirmRemote:IsA("RemoteEvent") then
+			hitConfirmRemote.OnClientEvent:Connect(handleServerHitConfirm)
+		end
 
-	local fallbackHitRemote = ReplicatedStorage:FindFirstChild("HitConfirmed")
-	if fallbackHitRemote and fallbackHitRemote ~= hitConfirmRemote and fallbackHitRemote:IsA("RemoteEvent") then
-		fallbackHitRemote.OnClientEvent:Connect(handleServerHitConfirm)
-	end
+		local fallbackHitRemote = ReplicatedStorage:FindFirstChild("HitConfirmed")
+		if fallbackHitRemote and fallbackHitRemote ~= hitConfirmRemote and fallbackHitRemote:IsA("RemoteEvent") then
+			fallbackHitRemote.OnClientEvent:Connect(handleServerHitConfirm)
+		end
+	end)
 
 	local initialWeapon = if LOCAL_PLAYER then LOCAL_PLAYER:GetAttribute("SelectedWeapon") else nil
 	if type(initialWeapon) == "string" and initialWeapon ~= "" then

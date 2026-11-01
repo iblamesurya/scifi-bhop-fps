@@ -11,6 +11,9 @@
     "Workspace": {
       "$className": "Workspace",
       "$ignoreUnknownInstances": true,
+      "AeroStrike_SkyIsland_Lobby": {
+        "$path": "assets/maps/AeroStrike_SkyIsland_Lobby.rbxmx"
+      },
       "PhantomMidway_5v5_Map": {
         "$path": "assets/maps/PhantomMidway_5v5_Map.rbxmx"
       }

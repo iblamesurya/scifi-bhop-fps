@@ -53,6 +53,32 @@ function CharacterService.setupCharacter(_player: Player, character: Model): ()
 	if hrp then
 		hrp.Anchored = false
 	end
+
+	-- @yelik.dev Social Proof: Visible Overdrive Aura on character Torso/Root
+	local torso: BasePart? = (character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso") or hrp) :: BasePart?
+	if torso and not torso:FindFirstChild("OverdriveSocialProofAura") then
+		local auraAtt = Instance.new("Attachment")
+		auraAtt.Name = "OverdriveSocialProofAura"
+		auraAtt.Parent = torso
+
+		local auraEmitter = Instance.new("ParticleEmitter")
+		auraEmitter.Name = "OverdriveAuraParticles"
+		auraEmitter.Color = ColorSequence.new(Color3.fromRGB(0, 240, 255), Color3.fromRGB(255, 110, 0))
+		auraEmitter.LightEmission = 1
+		auraEmitter.Size = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.28),
+			NumberSequenceKeypoint.new(1, 0),
+		})
+		auraEmitter.Transparency = NumberSequence.new({
+			NumberSequenceKeypoint.new(0, 0.35),
+			NumberSequenceKeypoint.new(1, 1),
+		})
+		auraEmitter.Lifetime = NumberRange.new(0.35, 0.65)
+		auraEmitter.Rate = 14
+		auraEmitter.Speed = NumberRange.new(1.5, 3.5)
+		auraEmitter.SpreadAngle = Vector2.new(180, 180)
+		auraEmitter.Parent = auraAtt
+	end
 end
 
 return CharacterService

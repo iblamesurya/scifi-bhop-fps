@@ -11,6 +11,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
 local clientRoot = script.Parent.Parent
@@ -102,6 +103,32 @@ local armorValueLabel: TextLabel? = nil
 local fluxValueLabel: TextLabel? = nil
 local buyPhaseBadgeLabel: TextLabel? = nil
 local economyStroke: UIStroke? = nil
+
+-- Interactive Staged Onboarding Refs (@adamdoesrobloxx retention fix)
+local onboardingCard: Frame? = nil
+local onboardingTextLabel: TextLabel? = nil
+local onboardingStroke: UIStroke? = nil
+local onboardingStage = 1 -- 1: Bhop > 45, 2: Slide [C/Ctrl], 3: Scope [RMB] + Fire [LMB], 4: Completed
+local onboardingCompletedTime = 0
+
+-- Moment-of-Death / Low-HP Instant Re-Arm Banner (@yelik.dev shop psychology)
+local reviveOfferBanner: Frame? = nil
+
+-- @motionbykrit Game Feel & Juice: Pre-allocated Floating Damage Number Pool + Smooth Bar Lerping
+type FloatingDamageEntry = {
+	Label: TextLabel,
+	Scale: UIScale,
+	WorldPos: Vector3,
+	StartTime: number,
+	Active: boolean,
+}
+local DAMAGE_POOL_SIZE = 12
+local damageNumberPool: { FloatingDamageEntry } = table.create(DAMAGE_POOL_SIZE)
+local damagePoolCursor = 0
+local smoothHealthRatio = 1.0
+local smoothSpeedRatio = 0.0
+local lastKnownKills = 0
+local killsBumpScale: UIScale? = nil
 
 local humanoidConnections: { RBXScriptConnection } = {}
 
@@ -241,12 +268,39 @@ local function updateHealthDisplay(health: number, maxHealth: number)
 		healthValueLabel.TextColor3 = if isLow then COLOR_CRITICAL_RED else COLOR_TEXT_PRIMARY
 	end
 	if healthFillBar then
-		healthFillBar.Size = UDim2.fromScale(ratio, 1)
-		healthFillBar.BackgroundColor3 = accentColor
+		-- @motionbykrit: Colour states Green -> Yellow/Orange -> Red & smooth bar animation
+		local stateColor = if ratio <= 0.30
+			then COLOR_CRITICAL_RED
+			elseif ratio <= 0.65 then COLOR_OVERDRIVE_ORANGE
+			else COLOR_NEON_CYAN
+		smoothHealthRatio = smoothHealthRatio + (ratio - smoothHealthRatio) * 0.28
+		healthFillBar.Size = UDim2.fromScale(smoothHealthRatio, 1)
+		healthFillBar.BackgroundColor3 = stateColor
 	end
 	if healthStroke then
 		healthStroke.Color = accentColor
 	end
+end
+
+function HudApp.SpawnFloatingDamageNumber(worldPos: Vector3, damage: number, isHeadshot: boolean)
+	if #damageNumberPool == 0 then
+		return
+	end
+	damagePoolCursor = (damagePoolCursor % DAMAGE_POOL_SIZE) + 1
+	local slot = damageNumberPool[damagePoolCursor]
+	if not slot then
+		return
+	end
+	slot.WorldPos = worldPos + Vector3.new((math.random() - 0.5) * 0.9, 0.6, (math.random() - 0.5) * 0.9)
+	slot.StartTime = os.clock()
+	slot.Active = true
+	slot.Label.Text = if isHeadshot then string.format("%d!", math.round(damage)) else tostring(math.round(damage))
+	slot.Label.TextColor3 = if isHeadshot then COLOR_OVERDRIVE_ORANGE else Color3.new(1, 1, 1)
+	slot.Label.TextSize = math.clamp(14 + math.floor(damage / 10), 15, 28)
+	slot.Label.TextTransparency = 0
+	slot.Label.TextStrokeTransparency = 0.15
+	slot.Scale.Scale = 1.35
+	slot.Label.Visible = true
 end
 
 local function updateTopRightTelemetryBadge()
@@ -267,6 +321,13 @@ local function updateTopRightTelemetryBadge()
 
 	if killsValueLabel then
 		killsValueLabel.Text = string.format("%02d", kills)
+		if kills > lastKnownKills and killsBumpScale then
+			killsBumpScale.Scale = 1.38
+		end
+		lastKnownKills = kills
+	end
+	if killsBumpScale and killsBumpScale.Scale > 1.001 then
+		killsBumpScale.Scale = 1.0 + (killsBumpScale.Scale - 1.0) * 0.82
 	end
 	if deathsValueLabel then
 		deathsValueLabel.Text = string.format("%02d", deaths)
@@ -356,11 +417,40 @@ local function updateHudTelemetry()
 	end
 	if speedFillBar then
 		local fillRatio = math.clamp(speed / MAX_SPEED_BAR_REFERENCE, 0, 1)
-		speedFillBar.Size = UDim2.fromScale(fillRatio, 1)
+		smoothSpeedRatio = smoothSpeedRatio + (fillRatio - smoothSpeedRatio) * 0.25
+		speedFillBar.Size = UDim2.fromScale(smoothSpeedRatio, 1)
 		speedFillBar.BackgroundColor3 = speedAccent
 	end
 	if speedStroke then
 		speedStroke.Color = speedAccent
+	end
+
+	-- @motionbykrit: Update floating 3D -> 2D damage numbers (pop in, float up, fade out)
+	local cam = workspace.CurrentCamera
+	local now = os.clock()
+	if cam then
+		for i = 1, #damageNumberPool do
+			local slot = damageNumberPool[i]
+			if slot and slot.Active then
+				local age = now - slot.StartTime
+				if age >= 0.55 then
+					slot.Active = false
+					slot.Label.Visible = false
+				else
+					local progress = age / 0.55
+					local screenPt, onScreen = cam:WorldToViewportPoint(slot.WorldPos + Vector3.new(0, progress * 2.2, 0))
+					if onScreen and screenPt.Z > 0 then
+						slot.Label.Position = UDim2.fromOffset(screenPt.X, screenPt.Y - (progress * 26))
+						slot.Label.TextTransparency = progress * progress
+						slot.Label.TextStrokeTransparency = 0.15 + (progress * 0.85)
+						slot.Scale.Scale = 1.0 + (slot.Scale.Scale - 1.0) * 0.78
+						slot.Label.Visible = true
+					else
+						slot.Label.Visible = false
+					end
+				end
+			end
+		end
 	end
 
 	-- 2. Ammo & Weapon Update
@@ -394,16 +484,50 @@ local function updateHudTelemetry()
 	-- 3. Top-Right Kills / Deaths / Peak Speed Telemetry
 	updateTopRightTelemetryBadge()
 
-	-- 4. Live Character Health Sync
+	-- 4. Live Character Health Sync & Moment-of-Death Re-Arm Prompt (@yelik.dev)
 	local character = LocalPlayer.Character
 	if character then
 		local humanoid = character:FindFirstChildOfClass("Humanoid")
 		if humanoid then
 			updateHealthDisplay(humanoid.Health, humanoid.MaxHealth)
+			if reviveOfferBanner then
+				reviveOfferBanner.Visible = (humanoid.Health <= 35)
+			end
 		end
 	end
 
-	-- 5. Live Economy & Armor Telemetry
+	-- 5. Interactive Staged Onboarding Tracker (@adamdoesrobloxx retention fix: <0.25s reactive stages)
+	if onboardingCard and onboardingTextLabel and onboardingStroke then
+		if onboardingStage == 1 then
+			if speed >= OVERDRIVE_SPEED_THRESHOLD then
+				onboardingStage = 2
+				onboardingTextLabel.Text = "STAGE 2/3 // PRESS [C] OR [CTRL] AT SPEED TO SLIDE-BOOST"
+				onboardingStroke.Color = COLOR_OVERDRIVE_ORANGE
+			end
+		elseif onboardingStage == 2 then
+			if UserInputService:IsKeyDown(Enum.KeyCode.C) or UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+				onboardingStage = 3
+				onboardingTextLabel.Text = "STAGE 3/3 // HOLD [RMB] TO SCOPE & [LMB] TO ENGAGE TARGETS"
+				onboardingStroke.Color = COLOR_NEON_CYAN
+			end
+		elseif onboardingStage == 3 then
+			if
+				UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2)
+				and UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1)
+			then
+				onboardingStage = 4
+				onboardingCompletedTime = os.clock()
+				onboardingTextLabel.Text = "ONBOARDING COMPLETE // OVERDRIVE SYSTEMS UNLOCKED (+200 CR)"
+				onboardingStroke.Color = Color3.fromRGB(46, 213, 115)
+			end
+		elseif onboardingStage == 4 then
+			if (os.clock() - onboardingCompletedTime) > 1.8 then
+				onboardingCard.Visible = false
+			end
+		end
+	end
+
+	-- 6. Live Economy & Armor Telemetry
 	updateEconomyDisplay()
 end
 
@@ -433,7 +557,7 @@ function HudApp.Init()
 	-- Initialize Crosshair inside HUD ScreenGui
 	CrosshairModule.Init(screenGui)
 
-	-- Register CrosshairModule.TriggerHitmarker into WeaponController.OnHitConfirmed
+	-- Register CrosshairModule.TriggerHitmarker & Floating Damage Numbers into WeaponController
 	if type(WeaponController) == "table" then
 		local existingHook = WeaponController.OnHitConfirmed
 		if existingHook == nil then
@@ -443,6 +567,41 @@ function HudApp.Init()
 		elseif type(existingHook) == "table" and type(existingHook.Connect) == "function" then
 			existingHook:Connect(CrosshairModule.TriggerHitmarker)
 		end
+
+		if type(WeaponController.OnDamageNumberRequested) == "table" then
+			table.insert(WeaponController.OnDamageNumberRequested, HudApp.SpawnFloatingDamageNumber)
+		end
+	end
+
+	-- Pre-allocate 12 Floating Damage Number labels (@motionbykrit: zero Instance.new during combat)
+	table.clear(damageNumberPool)
+	for i = 1, DAMAGE_POOL_SIZE do
+		local dmgLbl = Instance.new("TextLabel")
+		dmgLbl.Name = string.format("FloatingDmg_%02d", i)
+		dmgLbl.BackgroundTransparency = 1
+		dmgLbl.AnchorPoint = Vector2.new(0.5, 0.5)
+		dmgLbl.Size = UDim2.fromOffset(90, 30)
+		dmgLbl.Font = Enum.Font.Code
+		dmgLbl.Text = "28"
+		dmgLbl.TextSize = 18
+		dmgLbl.TextColor3 = Color3.new(1, 1, 1)
+		dmgLbl.TextStrokeColor3 = Color3.fromRGB(8, 12, 18)
+		dmgLbl.TextStrokeTransparency = 0.15
+		dmgLbl.Visible = false
+		dmgLbl.ZIndex = 20
+		dmgLbl.Parent = screenGui
+
+		local uiscale = Instance.new("UIScale")
+		uiscale.Scale = 1.0
+		uiscale.Parent = dmgLbl
+
+		damageNumberPool[i] = {
+			Label = dmgLbl,
+			Scale = uiscale,
+			WorldPos = Vector3.zero,
+			StartTime = 0,
+			Active = false,
+		}
 	end
 
 	-- =========================================================================
@@ -481,6 +640,11 @@ function HudApp.Init()
 	killsVal.TextXAlignment = Enum.TextXAlignment.Left
 	killsVal.Parent = telemetryCard
 	killsValueLabel = killsVal
+
+	local kScale = Instance.new("UIScale")
+	kScale.Scale = 1.0
+	kScale.Parent = killsVal
+	killsBumpScale = kScale
 
 	local deathsHeader = Instance.new("TextLabel")
 	deathsHeader.Name = "DeathsHeader"
@@ -830,6 +994,54 @@ function HudApp.Init()
 	aBarFill.Parent = aBarBg
 	ammoFillBar = aBarFill
 
+	-- =========================================================================
+	-- 5. INTERACTIVE 3-STAGE ONBOARDING TRACKER (@adamdoesrobloxx retention fix)
+	-- =========================================================================
+	local obCard, obStroke = createGlassCard(
+		"InteractiveOnboardingCard",
+		screenGui,
+		UDim2.fromOffset(440, 32),
+		UDim2.new(0.5, 0, 0, 22),
+		Vector2.new(0.5, 0)
+	)
+	onboardingCard = obCard
+	onboardingStroke = obStroke
+
+	local obLabel = Instance.new("TextLabel")
+	obLabel.Name = "OnboardingGoalText"
+	obLabel.BackgroundTransparency = 1
+	obLabel.Size = UDim2.fromScale(1, 1)
+	obLabel.Font = Enum.Font.Code
+	obLabel.Text = "STAGE 1/3 // HOLD [SPACE] + STRAFE [A/D] TO HIT 45 STUDS/S"
+	obLabel.TextSize = 12
+	obLabel.TextColor3 = COLOR_TEXT_PRIMARY
+	obLabel.Parent = obCard
+	onboardingTextLabel = obLabel
+
+	-- =========================================================================
+	-- 6. MOMENT-OF-DEATH / CRITICAL HP INSTANT RE-ARM BANNER (@yelik.dev)
+	-- =========================================================================
+	local revCard, revStroke = createGlassCard(
+		"InstantReviveOfferBanner",
+		screenGui,
+		UDim2.fromOffset(420, 34),
+		UDim2.new(0.5, 0, 1, -104),
+		Vector2.new(0.5, 1)
+	)
+	revStroke.Color = COLOR_OVERDRIVE_ORANGE
+	revCard.Visible = false
+	reviveOfferBanner = revCard
+
+	local revLabel = Instance.new("TextLabel")
+	revLabel.Name = "ReviveOfferText"
+	revLabel.BackgroundTransparency = 1
+	revLabel.Size = UDim2.fromScale(1, 1)
+	revLabel.Font = Enum.Font.Code
+	revLabel.Text = "CRITICAL VITALS // PRESS [B] INSTANT EXO-SHIELD RE-ARM ($400 CR / 49 R$ STARTER)"
+	revLabel.TextSize = 11
+	revLabel.TextColor3 = COLOR_OVERDRIVE_ORANGE
+	revLabel.Parent = revCard
+
 	-- Character & Attribute Telemetry Connections
 	if LocalPlayer.Character then
 		bindCharacter(LocalPlayer.Character)
@@ -854,8 +1066,7 @@ function HudApp.Init()
 
 	-- Sync visibility with Arena attribute & ensure LobbyApp is initialized
 	local function syncArenaVisibility()
-		local inArena = LocalPlayer:GetAttribute("InArena") == true
-		HudApp.SetVisible(inArena)
+		HudApp.SetVisible(true)
 	end
 	LocalPlayer:GetAttributeChangedSignal("InArena"):Connect(syncArenaVisibility)
 	syncArenaVisibility()

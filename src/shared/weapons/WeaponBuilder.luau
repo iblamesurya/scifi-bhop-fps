@@ -463,65 +463,57 @@ function WeaponBuilder.AddDetailedEOTech(model: Instance, parent: BasePart, base
 		Material = Enum.Material.Metal,
 		Shape = "CylinderX",
 	})
-	-- Outer Protective Aluminum Roll-Cage Hood (Left, Right, Top, Chamfered Corners + 3 Ribs)
+	-- Outer Protective Aluminum Roll-Cage Hood (Slimmed depth for wide 1P sight picture)
 	WeaponBuilder.AddPart(model, parent, {
 		Name = "EXPS3_HoodLeft",
-		Size = Vector3.new(0.032, 0.25, 0.38),
-		Offset = baseOffset * CFrame.new(-0.125, 0.17, 0.04),
+		Size = Vector3.new(0.024, 0.26, 0.22),
+		Offset = baseOffset * CFrame.new(-0.15, 0.19, 0.04),
 		Color = hoodColor,
 		Material = Enum.Material.Metal,
 	})
 	WeaponBuilder.AddPart(model, parent, {
 		Name = "EXPS3_HoodRight",
-		Size = Vector3.new(0.032, 0.25, 0.38),
-		Offset = baseOffset * CFrame.new(0.125, 0.17, 0.04),
+		Size = Vector3.new(0.024, 0.26, 0.22),
+		Offset = baseOffset * CFrame.new(0.15, 0.19, 0.04),
 		Color = hoodColor,
 		Material = Enum.Material.Metal,
 	})
 	WeaponBuilder.AddPart(model, parent, {
 		Name = "EXPS3_HoodTopArch",
-		Size = Vector3.new(0.26, 0.032, 0.38),
-		Offset = baseOffset * CFrame.new(0, 0.295, 0.04),
+		Size = Vector3.new(0.31, 0.024, 0.22),
+		Offset = baseOffset * CFrame.new(0, 0.32, 0.04),
 		Color = hoodColor,
 		Material = Enum.Material.Metal,
 	})
 	-- Beveled Upper Hood Corners
 	WeaponBuilder.AddPart(model, parent, {
 		Name = "EXPS3_HoodBevelL",
-		Size = Vector3.new(0.04, 0.04, 0.38),
-		Offset = baseOffset * CFrame.new(-0.105, 0.275, 0.04) * CFrame.Angles(0, 0, math.rad(45)),
+		Size = Vector3.new(0.032, 0.032, 0.22),
+		Offset = baseOffset * CFrame.new(-0.135, 0.30, 0.04) * CFrame.Angles(0, 0, math.rad(45)),
 		Color = hoodColor,
 		Material = Enum.Material.Metal,
 	})
 	WeaponBuilder.AddPart(model, parent, {
 		Name = "EXPS3_HoodBevelR",
-		Size = Vector3.new(0.04, 0.04, 0.38),
-		Offset = baseOffset * CFrame.new(0.105, 0.275, 0.04) * CFrame.Angles(0, 0, math.rad(-45)),
+		Size = Vector3.new(0.032, 0.032, 0.22),
+		Offset = baseOffset * CFrame.new(0.135, 0.30, 0.04) * CFrame.Angles(0, 0, math.rad(-45)),
 		Color = hoodColor,
 		Material = Enum.Material.Metal,
 	})
-	-- Inner Optical Window Frame + Front & Rear AR Glass Lenses
+	-- Crystal-Clear Anti-Reflective Optical Lens (SmoothPlastic @ 0.94 transparency avoids Roblox Glass refraction culling)
 	WeaponBuilder.AddPart(model, parent, {
 		Name = "EXPS3_GlassFront",
-		Size = Vector3.new(0.20, 0.20, 0.012),
-		Offset = baseOffset * CFrame.new(0, 0.17, -0.11),
+		Size = Vector3.new(0.25, 0.22, 0.008),
+		Offset = baseOffset * CFrame.new(0, 0.19, -0.08),
 		Color = PALETTE.LensGlass,
-		Material = Enum.Material.Glass,
-		Transparency = 0.72,
-	})
-	WeaponBuilder.AddPart(model, parent, {
-		Name = "EXPS3_GlassRear",
-		Size = Vector3.new(0.20, 0.20, 0.012),
-		Offset = baseOffset * CFrame.new(0, 0.17, 0.18),
-		Color = PALETTE.LensGlass,
-		Material = Enum.Material.Glass,
-		Transparency = 0.76,
+		Material = Enum.Material.SmoothPlastic,
+		Transparency = 0.94,
 	})
 	-- 68-MOA Holographic Outer Reticle Ring (4 micro neon ticks) + 1-MOA Center Pinpoint Dot
-	local retCF = baseOffset * CFrame.new(0, 0.17, 0.04)
+	local retCF = baseOffset * CFrame.new(0, 0.19, 0.04)
 	WeaponBuilder.AddPart(model, parent, {
 		Name = "EXPS3_CenterDot",
-		Size = Vector3.new(0.014, 0.014, 0.006),
+		Size = Vector3.new(0.012, 0.012, 0.005),
 		Offset = retCF,
 		Color = PALETTE.OpticRuby,
 		Material = Enum.Material.Neon,
@@ -531,8 +523,8 @@ function WeaponBuilder.AddDetailedEOTech(model: Instance, parent: BasePart, base
 		local rad = math.rad(a)
 		WeaponBuilder.AddPart(model, parent, {
 			Name = "EXPS3_RingTick_" .. a,
-			Size = Vector3.new(0.008, 0.025, 0.005),
-			Offset = retCF * CFrame.Angles(0, 0, rad) * CFrame.new(0, 0.042, 0),
+			Size = Vector3.new(0.007, 0.024, 0.004),
+			Offset = retCF * CFrame.Angles(0, 0, rad) * CFrame.new(0, 0.048, 0),
 			Color = PALETTE.OpticRuby,
 			Material = Enum.Material.Neon,
 		})
@@ -700,12 +692,12 @@ end
 -- Approximate optic reticle axes in WeaponMesh space (taken from each weapon's optic offsets).
 -- Tune these in Studio against the ViewmodelController ADS alignment if a sight sits off-axis.
 local AIM_OFFSETS: { [string]: CFrame } = {
-	M4A1_Carbine = CFrame.new(0, 1.13, -0.42),
-	MP5_Tactical = CFrame.new(0, 1.00, -0.42),
-	AWM_Sniper = CFrame.new(0, 1.16, -1.00),
-	M1014_Shotgun = CFrame.new(0, 0.80, -1.00),
-	M249_MachineGun = CFrame.new(0, 1.16, -0.32),
-	G19X_Pistol = CFrame.new(0, 0.70, -0.24),
+	M4A1_Carbine = CFrame.new(0, 1.15, -0.38),
+	MP5_Tactical = CFrame.new(0, 1.10, -0.30),
+	AWM_Sniper = CFrame.new(0, 1.16, -1.28),
+	M1014_Shotgun = CFrame.new(0, 0.96, -0.48),
+	M249_MachineGun = CFrame.new(0, 1.18, -0.28),
+	G19X_Pistol = CFrame.new(0, 0.70, -0.18),
 	M67_Frag = CFrame.new(0, 0.35, 0),
 	KABAR_Knife = CFrame.new(0, 0.95, 0),
 	Tactical_Bat = CFrame.new(0, 1.35, 0),
@@ -1239,21 +1231,26 @@ function WeaponBuilder.BuildM4A1(kind: BuildKind?): Model
 		})
 	end
 
-	-- 9. 24-Part EOTech EXPS3 Holographic Sight + 16-Part AN/PEQ-15 Laser + KAC Micro Flip-Up Sights
+	-- 9. 24-Part EOTech EXPS3 Holographic Sight + Side-Mounted AN/PEQ-15 Laser + KAC Micro Flip-Up Sights
 	WeaponBuilder.AddDetailedEOTech(model, handle, CFrame.new(0, 0.96, -0.42), PALETTE.PolymerFDE)
-	WeaponBuilder.AddDetailedPEQ15(model, handle, CFrame.new(0, 1.00, -2.35), CFrame.new(0, 0.94, -1.75))
-	-- Folded KAC Micro Front & Rear Backup Iron Sights
+	WeaponBuilder.AddDetailedPEQ15(
+		model,
+		handle,
+		CFrame.new(0.20, 0.72, -2.35) * CFrame.Angles(0, 0, math.rad(-90)),
+		CFrame.new(0, 0.91, -1.75)
+	)
+	-- Folded KAC Micro Front & Rear Backup Iron Sights (low-profile so sightline is 100% clear)
 	WeaponBuilder.AddPart(model, handle, {
 		Name = "KAC_RearBUIS",
-		Size = Vector3.new(0.20, 0.07, 0.24),
-		Offset = CFrame.new(0, 0.95, 0.02),
+		Size = Vector3.new(0.20, 0.05, 0.24),
+		Offset = CFrame.new(0, 0.92, 0.02),
 		Color = PALETTE.GunmetalDark,
 		Material = Enum.Material.Metal,
 	})
 	WeaponBuilder.AddPart(model, handle, {
 		Name = "KAC_FrontBUIS",
-		Size = Vector3.new(0.20, 0.07, 0.24),
-		Offset = CFrame.new(0, 0.95, -2.68),
+		Size = Vector3.new(0.20, 0.05, 0.24),
+		Offset = CFrame.new(0, 0.92, -2.68),
 		Color = PALETTE.CoyoteBronze,
 		Material = Enum.Material.Metal,
 	})
@@ -1667,22 +1664,38 @@ function WeaponBuilder.BuildMP5(kind: BuildKind?): Model
 		6,
 		PALETTE.GunmetalDark
 	)
+	WeaponBuilder.AddPart(model, handle, {
+		Name = "AimpointT2_RiserMount",
+		Size = Vector3.new(0.18, 0.14, 0.26),
+		Offset = CFrame.new(0, 0.93, -0.42),
+		Color = PALETTE.GunmetalDark,
+		Material = Enum.Material.Metal,
+	})
 	WeaponBuilder.AddHollowTube(
 		model,
 		handle,
 		"AimpointT2Tube",
-		CFrame.new(0, 1.00, -0.42),
-		0.095,
-		0.018,
-		0.32,
-		8,
+		CFrame.new(0, 1.10, -0.42),
+		0.135,
+		0.016,
+		0.30,
+		12,
 		PALETTE.ReceiverBlack,
 		Enum.Material.Metal
 	)
 	WeaponBuilder.AddPart(model, handle, {
+		Name = "AimpointT2_Lens",
+		Size = Vector3.new(0.22, 0.22, 0.008),
+		Offset = CFrame.new(0, 1.10, -0.52),
+		Color = PALETTE.LensGlass,
+		Material = Enum.Material.SmoothPlastic,
+		Transparency = 0.94,
+		Shape = "CylinderZ",
+	})
+	WeaponBuilder.AddPart(model, handle, {
 		Name = "AimpointT2_ReticleDot",
-		Size = Vector3.new(0.016, 0.016, 0.008),
-		Offset = CFrame.new(0, 1.00, -0.42),
+		Size = Vector3.new(0.014, 0.014, 0.006),
+		Offset = CFrame.new(0, 1.10, -0.42),
 		Color = PALETTE.TritiumGreen,
 		Material = Enum.Material.Neon,
 		Shape = "Sphere",
@@ -2024,111 +2037,159 @@ function WeaponBuilder.BuildAWMSniper(kind: BuildKind?): Model
 		Color = PALETTE.GunmetalDark,
 		Material = Enum.Material.Metal,
 	})
-	-- Front & Rear 34mm Scope Rings with 6 Clamping Torx Screws
-	for _, zRing in ipairs({ -0.10, -0.82 }) do
+	-- Front & Rear 34mm Scope Rings with wide 1P ADS clearance
+	for _, zRing in ipairs({ -0.10, -0.68 }) do
 		WeaponBuilder.AddHollowTube(
 			model,
 			handle,
 			"SpuhrRing_" .. tostring(zRing),
 			CFrame.new(0, 1.16, zRing),
-			0.145,
-			0.032,
-			0.16,
-			8,
+			0.23,
+			0.020,
+			0.14,
+			12,
 			PALETTE.GunmetalDark,
 			Enum.Material.Metal
 		)
 	end
-	-- 34mm Main Scope Tube + Turret Saddle Box
-	WeaponBuilder.AddPart(model, handle, {
-		Name = "SB_MainTube34mm",
-		Size = Vector3.new(0.21, 0.21, 1.65),
-		Offset = CFrame.new(0, 1.16, -0.52),
-		Color = PALETTE.ReceiverBlack,
-		Material = Enum.Material.Metal,
-		Reflectance = 0.10,
-		Shape = "CylinderZ",
-	})
-	WeaponBuilder.AddPart(model, handle, {
-		Name = "SB_TurretSaddleCube",
-		Size = Vector3.new(0.26, 0.26, 0.28),
-		Offset = CFrame.new(0, 1.16, -0.46),
-		Color = PALETTE.ReceiverBlack,
-		Material = Enum.Material.Metal,
-	})
-	-- Double-Turn Elevation Turret (Top), Windage Turret (Right), Illumination/Parallax Turret (Left)
+	-- Truly Hollow Wide-Bore Scope Tube + Hollow Turret Saddle Collar (positioned behind ADS eye relief so zero tunnel walls!)
+	WeaponBuilder.AddHollowTube(
+		model,
+		handle,
+		"SB_MainTube34mm",
+		CFrame.new(0, 1.16, -0.32),
+		0.21,
+		0.015,
+		0.88,
+		12,
+		PALETTE.ReceiverBlack,
+		Enum.Material.Metal
+	)
+	WeaponBuilder.AddHollowTube(
+		model,
+		handle,
+		"SB_TurretSaddleCollar",
+		CFrame.new(0, 1.16, -0.38),
+		0.235,
+		0.022,
+		0.26,
+		10,
+		PALETTE.ReceiverBlack,
+		Enum.Material.Metal
+	)
+	-- Double-Turn Elevation Turret (Top), Windage Turret (Right), Illumination/Parallax Turret (Left) — positioned outside bore!
 	WeaponBuilder.AddPart(model, handle, {
 		Name = "SB_ElevationTurret",
-		Size = Vector3.new(0.18, 0.16, 0.18),
-		Offset = CFrame.new(0, 1.34, -0.46),
+		Size = Vector3.new(0.16, 0.12, 0.16),
+		Offset = CFrame.new(0, 1.44, -0.38),
 		Color = PALETTE.GunmetalDark,
 		Material = Enum.Material.Metal,
 		Shape = "CylinderY",
 	})
 	WeaponBuilder.AddPart(model, handle, {
 		Name = "SB_ElevationYellowIndicator",
-		Size = Vector3.new(0.185, 0.025, 0.185),
-		Offset = CFrame.new(0, 1.39, -0.46),
+		Size = Vector3.new(0.165, 0.022, 0.165),
+		Offset = CFrame.new(0, 1.50, -0.38),
 		Color = PALETTE.SafetyYellow,
 		Material = Enum.Material.SmoothPlastic,
 		Shape = "CylinderY",
 	})
 	WeaponBuilder.AddPart(model, handle, {
 		Name = "SB_WindageTurret",
-		Size = Vector3.new(0.14, 0.16, 0.16),
-		Offset = CFrame.new(0.18, 1.16, -0.46),
+		Size = Vector3.new(0.10, 0.15, 0.15),
+		Offset = CFrame.new(0.27, 1.16, -0.38),
 		Color = PALETTE.GunmetalDark,
 		Material = Enum.Material.Metal,
 		Shape = "CylinderX",
 	})
 	WeaponBuilder.AddPart(model, handle, {
 		Name = "SB_ParallaxTurret",
-		Size = Vector3.new(0.14, 0.16, 0.16),
-		Offset = CFrame.new(-0.18, 1.16, -0.46),
+		Size = Vector3.new(0.10, 0.15, 0.15),
+		Offset = CFrame.new(-0.27, 1.16, -0.38),
 		Color = PALETTE.GunmetalDark,
 		Material = Enum.Material.Metal,
 		Shape = "CylinderX",
 	})
-	-- Truly Hollow 56mm Objective Bell + Honeycomb Sunshade + Emerald Multi-Coated Front Lens
+	-- Truly Hollow 56mm Objective Bell + Crystal-Clear Emerald AR Front Lens
 	WeaponBuilder.AddHollowTube(
 		model,
 		handle,
 		"SB_ObjectiveBell56mm",
-		CFrame.new(0, 1.16, -1.52),
-		0.185,
-		0.025,
-		0.72,
-		10,
+		CFrame.new(0, 1.16, -1.28),
+		0.24,
+		0.018,
+		0.28,
+		12,
 		PALETTE.ReceiverBlack,
 		Enum.Material.Metal
 	)
 	WeaponBuilder.AddPart(model, handle, {
 		Name = "SB_ObjectiveEmeraldLens",
-		Size = Vector3.new(0.32, 0.32, 0.025),
-		Offset = CFrame.new(0, 1.16, -1.78),
+		Size = Vector3.new(0.44, 0.44, 0.008),
+		Offset = CFrame.new(0, 1.16, -1.36),
 		Color = PALETTE.LensEmerald,
-		Material = Enum.Material.Glass,
-		Transparency = 0.28,
-		Reflectance = 0.45,
+		Material = Enum.Material.SmoothPlastic,
+		Transparency = 0.94,
+		Reflectance = 0.05,
 		Shape = "CylinderZ",
 	})
+	-- First-Focal-Plane Illuminated Mil-Dot Crosshair Reticle inside the wide objective window
+	local awmRetCF = CFrame.new(0, 1.16, -1.28)
+	WeaponBuilder.AddPart(model, handle, {
+		Name = "SB_ReticleHorizStadia",
+		Size = Vector3.new(0.42, 0.003, 0.003),
+		Offset = awmRetCF,
+		Color = PALETTE.GunmetalDark,
+		Material = Enum.Material.SmoothPlastic,
+	})
+	WeaponBuilder.AddPart(model, handle, {
+		Name = "SB_ReticleVertStadia",
+		Size = Vector3.new(0.003, 0.42, 0.003),
+		Offset = awmRetCF,
+		Color = PALETTE.GunmetalDark,
+		Material = Enum.Material.SmoothPlastic,
+	})
+	WeaponBuilder.AddPart(model, handle, {
+		Name = "SB_ReticleCenterDot",
+		Size = Vector3.new(0.012, 0.012, 0.005),
+		Offset = awmRetCF,
+		Color = PALETTE.OpticRuby,
+		Material = Enum.Material.Neon,
+		Shape = "Sphere",
+	})
+	for _, milOffset in ipairs({ -0.10, -0.05, 0.05, 0.10 }) do
+		WeaponBuilder.AddPart(model, handle, {
+			Name = "SB_MilTickX_" .. tostring(milOffset),
+			Size = Vector3.new(0.003, 0.016, 0.003),
+			Offset = awmRetCF * CFrame.new(milOffset, 0, 0),
+			Color = PALETTE.OpticRuby,
+			Material = Enum.Material.Neon,
+		})
+		WeaponBuilder.AddPart(model, handle, {
+			Name = "SB_MilTickY_" .. tostring(milOffset),
+			Size = Vector3.new(0.016, 0.003, 0.003),
+			Offset = awmRetCF * CFrame.new(0, milOffset, 0),
+			Color = PALETTE.OpticRuby,
+			Material = Enum.Material.Neon,
+		})
+	end
 	-- Rear Ocular Bell, Magnification Throw Lever & Rubber Eyepiece Ring
 	WeaponBuilder.AddHollowTube(
 		model,
 		handle,
 		"SB_OcularEyepiece",
-		CFrame.new(0, 1.16, 0.38),
-		0.145,
-		0.022,
-		0.42,
-		8,
+		CFrame.new(0, 1.16, 0.34),
+		0.215,
+		0.016,
+		0.36,
+		12,
 		PALETTE.ReceiverBlack,
 		Enum.Material.Metal
 	)
 	WeaponBuilder.AddPart(model, handle, {
 		Name = "SB_MagThrowLeverFin",
 		Size = Vector3.new(0.03, 0.12, 0.05),
-		Offset = CFrame.new(-0.14, 1.28, 0.16) * CFrame.Angles(0, 0, math.rad(38)),
+		Offset = CFrame.new(-0.21, 1.35, 0.16) * CFrame.Angles(0, 0, math.rad(38)),
 		Color = PALETTE.AnodizedSlate,
 		Material = Enum.Material.Metal,
 	})
@@ -2367,7 +2428,7 @@ function WeaponBuilder.BuildM1014Shotgun(kind: BuildKind?): Model
 		})
 	end
 
-	-- 7. Top Picatinny Rail, LPA Ghost-Ring Rear Sight with Wing Guards & Winged Tritium Front Post
+	-- 7. Top Picatinny Rail, LPA Ghost-Ring Rear Sight, Co-Witness Reflex Red-Dot & Tritium Front Post
 	WeaponBuilder.AddPicatinnyRail(
 		model,
 		handle,
@@ -2379,8 +2440,8 @@ function WeaponBuilder.BuildM1014Shotgun(kind: BuildKind?): Model
 	)
 	WeaponBuilder.AddPart(model, handle, {
 		Name = "LPA_GhostRingBase",
-		Size = Vector3.new(0.24, 0.14, 0.22),
-		Offset = CFrame.new(0, 0.85, 0.08),
+		Size = Vector3.new(0.24, 0.06, 0.22),
+		Offset = CFrame.new(0, 0.81, 0.08),
 		Color = PALETTE.GunmetalDark,
 		Material = Enum.Material.Metal,
 	})
@@ -2388,25 +2449,66 @@ function WeaponBuilder.BuildM1014Shotgun(kind: BuildKind?): Model
 		model,
 		handle,
 		"LPA_GhostRingAperture",
-		CFrame.new(0, 0.94, 0.08),
-		0.055,
-		0.015,
+		CFrame.new(0, 0.96, 0.08),
+		0.115,
+		0.014,
 		0.04,
-		8,
+		10,
 		PALETTE.ParkerizedSteel,
 		Enum.Material.Metal
 	)
+	-- Open-Window Reflex Red-Dot Optic on Top Rail (aligned on Y = 0.96 axis)
+	local sgRmrCF = CFrame.new(0, 0.83, -0.48)
+	WeaponBuilder.AddPart(model, handle, {
+		Name = "M1014_RMRBase",
+		Size = Vector3.new(0.21, 0.05, 0.30),
+		Offset = sgRmrCF,
+		Color = PALETTE.GunmetalDark,
+		Material = Enum.Material.Metal,
+	})
+	for side = -1, 1, 2 do
+		WeaponBuilder.AddPart(model, handle, {
+			Name = "M1014_RMRPost_" .. side,
+			Size = Vector3.new(0.026, 0.19, 0.10),
+			Offset = sgRmrCF * CFrame.new(side * 0.11, 0.13, -0.06),
+			Color = PALETTE.GunmetalDark,
+			Material = Enum.Material.Metal,
+		})
+	end
+	WeaponBuilder.AddPart(model, handle, {
+		Name = "M1014_RMRArch",
+		Size = Vector3.new(0.24, 0.026, 0.10),
+		Offset = sgRmrCF * CFrame.new(0, 0.23, -0.06),
+		Color = PALETTE.GunmetalDark,
+		Material = Enum.Material.Metal,
+	})
+	WeaponBuilder.AddPart(model, handle, {
+		Name = "M1014_RMRLens",
+		Size = Vector3.new(0.19, 0.17, 0.008),
+		Offset = sgRmrCF * CFrame.new(0, 0.13, -0.06),
+		Color = PALETTE.LensGlass,
+		Material = Enum.Material.SmoothPlastic,
+		Transparency = 0.94,
+	})
+	WeaponBuilder.AddPart(model, handle, {
+		Name = "M1014_RMRDot",
+		Size = Vector3.new(0.014, 0.014, 0.006),
+		Offset = sgRmrCF * CFrame.new(0, 0.13, -0.07),
+		Color = PALETTE.OpticRuby,
+		Material = Enum.Material.Neon,
+		Shape = "Sphere",
+	})
 	WeaponBuilder.AddPart(model, handle, {
 		Name = "FrontSightWingBase",
-		Size = Vector3.new(0.18, 0.18, 0.16),
-		Offset = CFrame.new(0, 0.81, -3.56),
+		Size = Vector3.new(0.18, 0.12, 0.16),
+		Offset = CFrame.new(0, 0.77, -3.56),
 		Color = PALETTE.GunmetalDark,
 		Material = Enum.Material.Metal,
 	})
 	WeaponBuilder.AddPart(model, handle, {
 		Name = "FrontTritiumBlade",
-		Size = Vector3.new(0.03, 0.09, 0.04),
-		Offset = CFrame.new(0, 0.88, -3.56),
+		Size = Vector3.new(0.026, 0.08, 0.04),
+		Offset = CFrame.new(0, 0.86, -3.56),
 		Color = PALETTE.TritiumGreen,
 		Material = Enum.Material.Neon,
 	})
@@ -2912,7 +3014,7 @@ function WeaponBuilder.BuildG19XPistol(kind: BuildKind?): Model
 			ParentPart = pistolSlide,
 		})
 	end
-	-- Slide-Mounted Trijicon RMR Type 2 Reflex Sight (Owl-Ear Aluminum Hood, Tinted Glass & 3.25 MOA Red Dot)
+	-- Slide-Mounted Trijicon RMR Type 2 Reflex Sight (Owl-Ear Aluminum Hood, Crystal-Clear Lens & 3.25 MOA Red Dot)
 	WeaponBuilder.AddPart(model, pistolSlide, {
 		Name = "RMR_Baseplate",
 		Size = Vector3.new(0.21, 0.05, 0.30),
@@ -2924,8 +3026,8 @@ function WeaponBuilder.BuildG19XPistol(kind: BuildKind?): Model
 	for side = -1, 1, 2 do
 		WeaponBuilder.AddPart(model, pistolSlide, {
 			Name = "RMR_OwlEarPost_" .. side,
-			Size = Vector3.new(0.032, 0.15, 0.10),
-			Offset = CFrame.new(side * 0.09, 0.20, 0.12),
+			Size = Vector3.new(0.026, 0.17, 0.10),
+			Offset = CFrame.new(side * 0.105, 0.21, 0.12),
 			Color = PALETTE.GunmetalDark,
 			Material = Enum.Material.Metal,
 			ParentPart = pistolSlide,
@@ -2933,24 +3035,24 @@ function WeaponBuilder.BuildG19XPistol(kind: BuildKind?): Model
 	end
 	WeaponBuilder.AddPart(model, pistolSlide, {
 		Name = "RMR_OwlTopArch",
-		Size = Vector3.new(0.20, 0.028, 0.10),
-		Offset = CFrame.new(0, 0.27, 0.12),
+		Size = Vector3.new(0.23, 0.026, 0.10),
+		Offset = CFrame.new(0, 0.295, 0.12),
 		Color = PALETTE.GunmetalDark,
 		Material = Enum.Material.Metal,
 		ParentPart = pistolSlide,
 	})
 	WeaponBuilder.AddPart(model, pistolSlide, {
 		Name = "RMR_LensGlass",
-		Size = Vector3.new(0.15, 0.13, 0.012),
+		Size = Vector3.new(0.18, 0.15, 0.008),
 		Offset = CFrame.new(0, 0.20, 0.12),
 		Color = PALETTE.LensGlass,
-		Material = Enum.Material.Glass,
-		Transparency = 0.68,
+		Material = Enum.Material.SmoothPlastic,
+		Transparency = 0.94,
 		ParentPart = pistolSlide,
 	})
 	WeaponBuilder.AddPart(model, pistolSlide, {
 		Name = "RMR_ReticleDot",
-		Size = Vector3.new(0.015, 0.015, 0.008),
+		Size = Vector3.new(0.013, 0.013, 0.006),
 		Offset = CFrame.new(0, 0.20, 0.11),
 		Color = PALETTE.OpticRuby,
 		Material = Enum.Material.Neon,
@@ -3502,6 +3604,8 @@ local CONSTRUCTORS: { [string]: (kind: BuildKind?) -> Model } = {
 	-- Starter & Economy weapon aliases mapped to 100+ part CAD constructors
 	VORTEX_SMG = WeaponBuilder.BuildM4A1,
 	HELIOS_RAIL = WeaponBuilder.BuildAWMSniper,
+	PlasmaShotgun = WeaponBuilder.BuildM1014Shotgun,
+	IonSidearm = WeaponBuilder.BuildG19XPistol,
 	wpn_pulse_pistol = WeaponBuilder.BuildG19XPistol,
 	wpn_burst_machine_pistol = WeaponBuilder.BuildMP5,
 	wpn_ion_revolver = WeaponBuilder.BuildG19XPistol,
@@ -3541,6 +3645,52 @@ function WeaponBuilder.GetTemplate(weaponKey: string, kind: BuildKind?): Model?
 		templateCache[cacheKey] = built
 	end
 	return built
+end
+
+WeaponBuilder.SkinOrder = {
+	"Factory_Issue",
+	"Arctic_Ghost",
+	"Cyber_Overdrive",
+	"Sovereign_Gold",
+}
+
+WeaponBuilder.WeaponSkins = {
+	Factory_Issue = {
+		DisplayName = "Factory Issue",
+		RarityColor = Color3.fromRGB(160, 175, 190),
+	},
+	Arctic_Ghost = {
+		DisplayName = "Arctic Ghost",
+		RarityColor = Color3.fromRGB(0, 240, 255),
+		PrimaryTint = Color3.fromRGB(220, 232, 242),
+	},
+	Cyber_Overdrive = {
+		DisplayName = "Cyber Overdrive",
+		RarityColor = Color3.fromRGB(255, 110, 0),
+		PrimaryTint = Color3.fromRGB(28, 36, 52),
+	},
+	Sovereign_Gold = {
+		DisplayName = "Sovereign Gold",
+		RarityColor = Color3.fromRGB(255, 205, 55),
+		PrimaryTint = Color3.fromRGB(212, 175, 55),
+	},
+}
+
+function WeaponBuilder.ApplySkinToWeapon(model: Model, skinId: string)
+	if not model or skinId == "Factory_Issue" or skinId == "" then
+		return
+	end
+	local skin = WeaponBuilder.WeaponSkins[skinId]
+	if not skin or not skin.PrimaryTint then
+		return
+	end
+	for _, desc in ipairs(model:GetDescendants()) do
+		if desc:IsA("BasePart") and desc.Transparency < 0.5 and desc.Material ~= Enum.Material.Neon then
+			if string.find(desc.Name, "Receiver") or string.find(desc.Name, "Handguard") or string.find(desc.Name, "Chassis") or string.find(desc.Name, "Slide") then
+				desc.Color = skin.PrimaryTint
+			end
+		end
+	end
 end
 
 return WeaponBuilder

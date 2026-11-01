@@ -35,9 +35,21 @@ local EconomyManager = requireServerModule(
 	if script:FindFirstChild("economy") then script.economy:FindFirstChild("EconomyManager") else nil
 )
 
-ArenaGenerator.Init()
-HitboxHistory.Init()
-CombatValidator.Init()
-StanceReplicator.Init()
-MatchService.Init()
-EconomyManager.Init()
+local function safeInit(name: string, mod: any)
+	if type(mod) == "table" and type(mod.Init) == "function" then
+		task.spawn(function()
+			local ok, err = pcall(mod.Init)
+			if not ok then
+				warn(`[ServerBootstrap] {name}.Init() failed: {tostring(err)}`)
+			end
+		end)
+	end
+end
+
+-- Initialize network remotes & combat/match services first so client WaitForChilds never hang
+safeInit("HitboxHistory", HitboxHistory)
+safeInit("CombatValidator", CombatValidator)
+safeInit("StanceReplicator", StanceReplicator)
+safeInit("EconomyManager", EconomyManager)
+safeInit("ArenaGenerator", ArenaGenerator)
+safeInit("MatchService", MatchService)

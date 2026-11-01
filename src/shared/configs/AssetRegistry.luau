@@ -272,6 +272,29 @@ local function createProceduralCharacterRig(name: string): Model
 	return model
 end
 
+local function vetAndOptimizeModel(model: Instance): (number, number)
+	local strippedScripts = 0
+	local optimizedParts = 0
+	for _, desc in ipairs(model:GetDescendants()) do
+		if desc:IsA("BaseScript") then
+			desc:Destroy()
+			strippedScripts += 1
+		elseif desc:IsA("BasePart") then
+			desc.CanTouch = false
+			local isHitbox = desc:GetAttribute("IsHitbox") == true
+				or desc.Name == "Head"
+				or desc.Name == "Torso"
+				or desc.Name == "HumanoidRootPart"
+			if not isHitbox and desc.Size.Magnitude < 2.2 then
+				desc.CanQuery = false
+				desc.CastShadow = false
+				optimizedParts += 1
+			end
+		end
+	end
+	return strippedScripts, optimizedParts
+end
+
 local function findAssetInstance(categoryFolder: string, assetName: string): Model?
 	local assetsFolder = ReplicatedStorage:FindFirstChild("Assets")
 	if not assetsFolder then
@@ -319,11 +342,14 @@ local AssetRegistry = {
 	UISprites = UISprites,
 	Textures = Textures,
 	NetworkEvents = NetworkEvents,
+	VetAndOptimizeModel = vetAndOptimizeModel,
 
 	GetViewmodel = function(viewmodelKey: string): Model
 		local template = findAssetInstance("Viewmodels", viewmodelKey)
 		if template then
-			return template:Clone()
+			local cloned = template:Clone()
+			vetAndOptimizeModel(cloned)
+			return cloned
 		end
 		return tryBuildArsenalModel(viewmodelKey, "Viewmodel") or createProceduralViewmodel(viewmodelKey)
 	end,
@@ -331,7 +357,9 @@ local AssetRegistry = {
 	GetWorldmodel = function(worldmodelKey: string): Model
 		local template = findAssetInstance("Worldmodels", worldmodelKey)
 		if template then
-			return template:Clone()
+			local cloned = template:Clone()
+			vetAndOptimizeModel(cloned)
+			return cloned
 		end
 		return tryBuildArsenalModel(worldmodelKey, "Worldmodel") or createProceduralWorldmodel(worldmodelKey)
 	end,
@@ -340,7 +368,9 @@ local AssetRegistry = {
 		local targetName = rigKey or "CompetitiveR6"
 		local template = findAssetInstance("Characters", targetName)
 		if template then
-			return template:Clone()
+			local cloned = template:Clone()
+			vetAndOptimizeModel(cloned)
+			return cloned
 		end
 		return createProceduralCharacterRig(targetName)
 	end,

@@ -49,6 +49,8 @@ local EconomyManager = resolveOptionalService("EconomyManager")
 local DEFAULT_WEAPON_ID = "M4A1_Carbine"
 local RESPAWN_DELAY = 3.0
 local REQUEST_DEPLOY_EVENT_NAME = "RequestDeploy"
+local OPTIMAL_5V5_MAX_PLAYERS = 10 -- @captainamado server fill: right-size 5v5 arena for high player density
+local RESERVED_FRIEND_SLOTS = 2
 
 local MatchService = {}
 
@@ -142,7 +144,7 @@ end
 
 local function initPlayerAttributes(player: Player)
 	if player:GetAttribute("InArena") == nil then
-		player:SetAttribute("InArena", true)
+		player:SetAttribute("InArena", false)
 	end
 	if player:GetAttribute("SelectedWeapon") == nil then
 		player:SetAttribute("SelectedWeapon", DEFAULT_WEAPON_ID)
@@ -187,10 +189,8 @@ local function onCharacterAdded(player: Player, character: Model)
 		local targetCFrame = if inArena then getArenaSpawnCFrame() else getLobbySpawnCFrame()
 		teleportCharacterTo(character, targetCFrame)
 
-		if inArena then
-			local weaponId = (player:GetAttribute("SelectedWeapon") :: string?) or DEFAULT_WEAPON_ID
-			applyLoadout(player, weaponId)
-		end
+		local weaponId = (player:GetAttribute("SelectedWeapon") :: string?) or DEFAULT_WEAPON_ID
+		applyLoadout(player, weaponId)
 	end)
 
 	local humanoid = character:FindFirstChildOfClass("Humanoid") or character:WaitForChild("Humanoid", 5)
@@ -223,7 +223,7 @@ end
 
 local function onPlayerAdded(player: Player)
 	initPlayerAttributes(player)
-	player:SetAttribute("InArena", true)
+	player:SetAttribute("InArena", false)
 
 	player.CharacterAdded:Connect(function(character: Model)
 		onCharacterAdded(player, character)
@@ -246,6 +246,17 @@ local function onPlayerRemoving(player: Player)
 end
 
 local function onRequestDeploy(player: Player, weaponId: unknown)
+	if weaponId == "RETURN_TO_LOBBY" then
+		initPlayerAttributes(player)
+		player:SetAttribute("InArena", false)
+		cancelPendingRespawn(player)
+		local character = player.Character
+		if character then
+			teleportCharacterTo(character, getLobbySpawnCFrame())
+		end
+		return
+	end
+
 	if not isValidWeaponId(weaponId) then
 		return
 	end
@@ -276,7 +287,14 @@ local function onRequestDeploy(player: Player, weaponId: unknown)
 end
 
 local function updateTopBhopSpeeds()
-	for _, player in Players:GetPlayers() do
+	local humanPlayers = Players:GetPlayers()
+	local botFillCount = math.max(0, OPTIMAL_5V5_MAX_PLAYERS - #humanPlayers)
+	game:GetService("Workspace"):SetAttribute("ServerFillTargetPlayers", OPTIMAL_5V5_MAX_PLAYERS)
+	game:GetService("Workspace"):SetAttribute("ReservedFriendSlots", RESERVED_FRIEND_SLOTS)
+	game:GetService("Workspace"):SetAttribute("PrivateServerCostRobux", 0)
+	game:GetService("Workspace"):SetAttribute("ActiveBotFillCount", botFillCount)
+
+	for _, player in humanPlayers do
 		local character = player.Character
 		local rootPart = if character then character:FindFirstChild("HumanoidRootPart") else nil
 		if rootPart and rootPart:IsA("BasePart") then

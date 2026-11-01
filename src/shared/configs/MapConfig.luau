@@ -68,18 +68,18 @@ local BhopPads: { PadData } = {
 
 local ArenaSpawns: { CFrame } = {
 	-- Phantom Midway 5v5 Alpha Squad Spawns (West Plaza facing +X)
-	CFrame.lookAt(Vector3.new(-148, 5, -24), Vector3.new(0, 5, -24)),
-	CFrame.lookAt(Vector3.new(-152, 5, -12), Vector3.new(0, 5, -12)),
-	CFrame.lookAt(Vector3.new(-154, 5, 0), Vector3.new(0, 5, 0)),
-	CFrame.lookAt(Vector3.new(-152, 5, 12), Vector3.new(0, 5, 12)),
-	CFrame.lookAt(Vector3.new(-148, 5, 24), Vector3.new(0, 5, 24)),
+	CFrame.lookAt(Vector3.new(-148, 3.8, -24), Vector3.new(0, 3.8, -24)),
+	CFrame.lookAt(Vector3.new(-152, 3.8, -12), Vector3.new(0, 3.8, -12)),
+	CFrame.lookAt(Vector3.new(-154, 3.8, 0), Vector3.new(0, 3.8, 0)),
+	CFrame.lookAt(Vector3.new(-152, 3.8, 12), Vector3.new(0, 3.8, 12)),
+	CFrame.lookAt(Vector3.new(-148, 3.8, 24), Vector3.new(0, 3.8, 24)),
 
 	-- Phantom Midway 5v5 Bravo Squad Spawns (East Plaza facing -X)
-	CFrame.lookAt(Vector3.new(148, 5, 24), Vector3.new(0, 5, 24)),
-	CFrame.lookAt(Vector3.new(152, 5, 12), Vector3.new(0, 5, 12)),
-	CFrame.lookAt(Vector3.new(154, 5, 0), Vector3.new(0, 5, 0)),
-	CFrame.lookAt(Vector3.new(152, 5, -12), Vector3.new(0, 5, -12)),
-	CFrame.lookAt(Vector3.new(148, 5, -24), Vector3.new(0, 5, -24)),
+	CFrame.lookAt(Vector3.new(148, 3.8, 24), Vector3.new(0, 3.8, 24)),
+	CFrame.lookAt(Vector3.new(152, 3.8, 12), Vector3.new(0, 3.8, 12)),
+	CFrame.lookAt(Vector3.new(154, 3.8, 0), Vector3.new(0, 3.8, 0)),
+	CFrame.lookAt(Vector3.new(152, 3.8, -12), Vector3.new(0, 3.8, -12)),
+	CFrame.lookAt(Vector3.new(148, 3.8, -24), Vector3.new(0, 3.8, -24)),
 }
 
 local JumpPads: { JumpPadSpec } = {
@@ -123,10 +123,10 @@ local MapConfig = {
 	},
 
 	Lobby = {
-		Center = Vector3.new(0, 120, 0),
+		Center = Vector3.new(0, 605, 18),
 		Size = Vector3.new(64, 22, 64),
 		GlassTransparency = 0.65,
-		SpawnCFrame = CFrame.lookAt(Vector3.new(0, 113, 20), Vector3.new(0, 113, -20)),
+		SpawnCFrame = CFrame.lookAt(Vector3.new(0, 604, 46), Vector3.new(0, 604, -10)),
 	},
 
 	ArenaSpawns = ArenaSpawns,

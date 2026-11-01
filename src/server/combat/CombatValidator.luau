@@ -1,6 +1,7 @@
 --!strict
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
 local HitboxHistory = require(script.Parent.HitboxHistory)
@@ -46,7 +47,62 @@ type PlayerCombatState = {
 	weapons: { [string]: WeaponState },
 }
 
+type HitRecord = {
+	hitPosition: Vector3,
+	hitPart: BasePart,
+	isHeadshot: boolean,
+	damage: number,
+}
+
+local MAX_BATCH_SIZE = 10 -- @letundev lag spike fix: batch up to 10 events per packet (<1000B)
+local MAX_FRAME_BUDGET_SEC = 0.004 -- 4ms server work slice within 16.6ms 60FPS frame budget
+
 local playerStates: { [Player]: PlayerCombatState } = {}
+local pendingHitsByShooter: { [Player]: { HitRecord } } = {}
+local staggeredWorkQueue: { () -> () } = {}
+
+local function flushHitBatchForShooter(shooter: Player, queue: { HitRecord })
+	if #queue == 0 or not hitConfirmEvent then
+		return
+	end
+	if shooter.Parent ~= Players then
+		table.clear(queue)
+		return
+	end
+
+	local count = math.min(#queue, MAX_BATCH_SIZE)
+	local primary = queue[1]
+	local batchSlice: { HitRecord } = table.create(count)
+	local totalDamage = 0
+	local anyHeadshot = false
+
+	for i = 1, count do
+		local entry = queue[i]
+		batchSlice[i] = entry
+		totalDamage += entry.damage
+		if entry.isHeadshot then
+			anyHeadshot = true
+		end
+	end
+
+	-- Shift remaining items if >10 queued in one frame
+	local remaining = #queue - count
+	for i = 1, remaining do
+		queue[i] = queue[i + count]
+	end
+	for i = #queue, remaining + 1, -1 do
+		queue[i] = nil
+	end
+
+	hitConfirmEvent:FireClient(shooter, {
+		hitPosition = primary.hitPosition,
+		hitPart = primary.hitPart,
+		isHeadshot = anyHeadshot,
+		damage = totalDamage,
+		batchCount = count,
+		hits = batchSlice,
+	})
+end
 
 function CombatValidator.Init()
 	fireEvent = ReplicatedStorage:FindFirstChild("FireWeaponBuffer") :: RemoteEvent
@@ -297,6 +353,7 @@ function CombatValidator.Init()
 							local vel = if hrp then hrp.AssemblyLinearVelocity else Vector3.zero
 							local horizSpeed = Vector3.new(vel.X, 0, vel.Z).Magnitude
 							local isAirborne = math.abs(vel.Y) > 1.5
+							local wasHeadshot = (hitPart.Name == "Head")
 
 							local rawWeaponId = weaponConfig.Id or weaponConfig.WeaponId or 10
 							local weaponNumId = 10
@@ -309,24 +366,53 @@ function CombatValidator.Init()
 								end
 							end
 
-							EconomyManager.RecordElimination(
-								shooter,
-								victimPlayer,
-								weaponNumId,
-								hitPart.Name == "Head",
-								horizSpeed,
-								isAirborne
-							)
+							-- Stagger heavy elimination & bounty work across frames within 16.6ms budget
+							table.insert(staggeredWorkQueue, function()
+								EconomyManager.RecordElimination(
+									shooter,
+									victimPlayer,
+									weaponNumId,
+									wasHeadshot,
+									horizSpeed,
+									isAirborne
+								)
+							end)
 						end
 					end
 
-					hitConfirmEvent:FireClient(shooter, {
+					local shooterQueue = pendingHitsByShooter[shooter]
+					if not shooterQueue then
+						shooterQueue = {}
+						pendingHitsByShooter[shooter] = shooterQueue
+					end
+					table.insert(shooterQueue, {
 						hitPosition = rayResult.Position,
 						hitPart = hitPart,
 						isHeadshot = (hitPart.Name == "Head"),
 						damage = effectiveDamage,
 					})
+					if #shooterQueue >= MAX_BATCH_SIZE then
+						flushHitBatchForShooter(shooter, shooterQueue)
+					end
 				end
+			end
+		end
+	end)
+
+	-- 60Hz Frame-Budgeted Batcher & Staggered Work Dispatcher (@letundev 60 FPS fix)
+	RunService.Heartbeat:Connect(function()
+		local frameStart = os.clock()
+
+		for shooter, queue in pendingHitsByShooter do
+			if #queue > 0 then
+				flushHitBatchForShooter(shooter, queue)
+			end
+		end
+
+		while #staggeredWorkQueue > 0 and (os.clock() - frameStart) < MAX_FRAME_BUDGET_SEC do
+			local job = table.remove(staggeredWorkQueue, 1)
+			if job then
+				pcall(job)
 			end
 		end
 	end)

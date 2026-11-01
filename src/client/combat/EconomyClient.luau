@@ -87,7 +87,18 @@ function EconomyClient.Init(): ()
 				return
 			end
 
-			EconomyClient.State = decoded
+			local st = EconomyClient.State
+			st.MatchCredits = decoded.MatchCredits
+			st.LossStreak = decoded.LossStreak
+			st.ArmorPoints = decoded.ArmorPoints
+			st.ArmorTier = decoded.ArmorTier
+			st.PrimaryWeaponId = decoded.PrimaryWeaponId
+			st.SecondaryWeaponId = decoded.SecondaryWeaponId
+			st.UtilityBitmask = decoded.UtilityBitmask
+			st.ReasonCode = decoded.ReasonCode
+			st.CreditDelta = decoded.CreditDelta
+			st.BuyPhaseOpen = decoded.BuyPhaseOpen
+			st.AccountFlux = decoded.AccountFlux
 			playAudioFeedback(decoded.ReasonCode)
 
 			for _, callback in ipairs(EconomyClient.OnStateChanged) do

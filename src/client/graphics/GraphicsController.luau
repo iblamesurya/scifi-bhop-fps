@@ -51,6 +51,10 @@ local depthOfFieldInstance: DepthOfFieldEffect? = nil
 local sunRaysInstance: SunRaysEffect? = nil
 local fovConnection: RBXScriptConnection? = nil
 
+-- @motionbykrit Game Feel & Juice: 1-2 frame B&W impact flash + FOV punch
+local impactFlashEndTime = 0
+local fovPunchOffset = 0
+
 local GraphicsController = {}
 
 local function getOrCreateEffect<T>(className: string, name: string): T
@@ -181,7 +185,27 @@ local function updateCameraFOV(dt: number): ()
 	end
 
 	local lerpAlpha = 1 - math.exp(-FOV_LERP_SPEED * math.min(dt, 0.1))
-	camera.FieldOfView = camera.FieldOfView + (targetFOV - camera.FieldOfView) * lerpAlpha
+	fovPunchOffset = fovPunchOffset * math.exp(-22 * math.min(dt, 0.1))
+	camera.FieldOfView = camera.FieldOfView + ((targetFOV + fovPunchOffset) - camera.FieldOfView) * lerpAlpha
+
+	-- Restore ColorCorrection after 1-2 frame B&W impact flash (@motionbykrit)
+	if colorCorrectionInstance and impactFlashEndTime > 0 and os.clock() >= impactFlashEndTime then
+		impactFlashEndTime = 0
+		colorCorrectionInstance.Saturation = PostProcessing.ColorCorrection.Saturation
+		colorCorrectionInstance.Contrast = PostProcessing.ColorCorrection.Contrast
+		colorCorrectionInstance.Brightness = PostProcessing.ColorCorrection.Brightness
+	end
+end
+
+function GraphicsController.TriggerImpactFrame(isHeavy: boolean?): ()
+	fovPunchOffset = if isHeavy then 4.2 else 1.8
+	if colorCorrectionInstance and isHeavy then
+		impactFlashEndTime = os.clock() + 0.032 -- ~2 frames at 60 FPS
+		colorCorrectionInstance.Enabled = true
+		colorCorrectionInstance.Saturation = -1.0
+		colorCorrectionInstance.Contrast = 0.85
+		colorCorrectionInstance.Brightness = 0.16
+	end
 end
 
 function GraphicsController.SetCompetitiveMode(isLow: boolean): ()

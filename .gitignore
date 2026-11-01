@@ -4,3 +4,6 @@
 .rojo/
 packages/
 Packages/
+.obsidian/
+*.base
+

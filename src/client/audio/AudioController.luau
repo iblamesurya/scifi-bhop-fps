@@ -40,6 +40,11 @@ local windRushSound: Sound? = nil
 local renderConnection: RBXScriptConnection? = nil
 local rng = Random.new()
 
+-- @motionbykrit Game Feel & Juice: Dual-layered audio + consecutive streak pitch climbing
+local hitStreakCount = 0
+local lastHitSoundTimestamp = 0
+local STREAK_RESET_WINDOW = 2.2
+
 local AudioController = {}
 
 local function getOrCreateSoundGroup(name: string): SoundGroup
@@ -197,7 +202,7 @@ function AudioController.PlayWeaponSound(soundKey: string): ()
 	sound:Play()
 end
 
-function AudioController.PlayUISound(soundKey: string): ()
+function AudioController.PlayUISound(soundKey: string, pitchOverride: number?): ()
 	ensurePoolsInitialized()
 
 	local soundId = resolveUISoundId(soundKey)
@@ -208,9 +213,31 @@ function AudioController.PlayUISound(soundKey: string): ()
 	uiPoolCursor = (uiPoolCursor % UI_SOUND_POOL_SIZE) + 1
 	local sound = uiSoundPool[uiPoolCursor]
 	sound.SoundId = soundId
-	sound.PlaybackSpeed = 1
+	sound.PlaybackSpeed = pitchOverride or 1
 	sound.TimePosition = 0
 	sound:Play()
+end
+
+-- @motionbykrit: Layer two sounds (bright transient + deep body) and climb pitch with streak
+function AudioController.PlayLayeredHitSound(isHeadshot: boolean): number
+	ensurePoolsInitialized()
+
+	local now = os.clock()
+	if (now - lastHitSoundTimestamp) <= STREAK_RESET_WINDOW then
+		hitStreakCount = math.min(hitStreakCount + 1, 10)
+	else
+		hitStreakCount = 1
+	end
+	lastHitSoundTimestamp = now
+
+	local pitchClimb = 1.0 + (hitStreakCount - 1) * 0.055
+	-- Layer 1: Deep body thump
+	AudioController.PlayUISound("HitmarkerBody", math.clamp(pitchClimb * 0.88, 0.8, 1.4))
+	-- Layer 2: Bright transient ping (higher pitch on headshot + streak)
+	local transientPitch = if isHeadshot then math.clamp(pitchClimb * 1.18, 1.05, 1.65) else math.clamp(pitchClimb * 1.04, 0.95, 1.5)
+	AudioController.PlayUISound("HitmarkerHeadshot", transientPitch)
+
+	return hitStreakCount
 end
 
 function AudioController.Init(): ()

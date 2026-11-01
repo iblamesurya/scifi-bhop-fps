@@ -300,6 +300,44 @@ local EconomyConfig = {
 	ItemsList = table.freeze(ItemsList),
 	ItemsById = table.freeze(ItemsById),
 	ItemsByKey = table.freeze(ItemsByKey),
+
+	-- @yelik.dev Shop Psychology: 49 R$ Starter Barrier Breaker + Decoy vs. Target Pack
+	ShopBundles = table.freeze({
+		StarterPack = table.freeze({
+			BundleId = "bundle_starter_49",
+			DisplayName = "STARTER BREACHER PACK",
+			RobuxPrice = 49,
+			CreditCost = 400,
+			Tag = "FIRST-PURCHASE SPECIAL (-80%)",
+			Description = "+1,500 Flux Shards + Neon Cyber Skin + Overdrive Trail Aura",
+		}),
+		DecoyPack = table.freeze({
+			BundleId = "bundle_decoy_tactical",
+			DisplayName = "STANDARD SPEC CRATE x3",
+			RobuxPrice = 349,
+			CreditCost = 2800,
+			Tag = "STANDARD VALUE",
+			Description = "3x Tactical Arsenal Crates + 500 Bonus Flux Shards",
+		}),
+		TargetProPack = table.freeze({
+			BundleId = "bundle_pro_overdrive",
+			DisplayName = "PRO OVERDRIVE VAULT x10",
+			RobuxPrice = 399,
+			CreditCost = 3200,
+			Tag = "BEST VALUE // 3.3X MORE LOOT",
+			Description = "10x Tactical Crates + Guaranteed Legendary Skin + Sovereign Gold Aura",
+		}),
+	}),
+
+	-- Mandatory Roblox Paid Random Item Disclosure (Strictly sums to 100.0%)
+	CrateOddsDisclosure = table.freeze({
+		Legendary_Gold = 5.0,
+		Epic_Void = 15.0,
+		Rare_Hyperion = 30.0,
+		MilSpec_Tactical = 50.0,
+		TotalPercent = 100.0,
+		FormattedText = "CRATE ODDS (100%): LEGENDARY 5% | EPIC 15% | RARE 30% | MIL-SPEC 50%",
+	}),
 }
 
 return table.freeze(EconomyConfig)

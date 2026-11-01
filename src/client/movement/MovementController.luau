@@ -12,8 +12,11 @@ local SlideController = require(script.Parent.SlideController)
 
 local GROUND_RAY_LENGTH: number = MovementConfig.GroundRayLength or 3.4
 local OVERHEAD_CLEARANCE_RAY_LENGTH: number = 3.6
+local STANDING_FOOT_CLEARANCE: number = 3.0
+local SLIDING_FOOT_CLEARANCE: number = 1.6
 local JUMP_VELOCITY: number = MovementConfig.JumpVelocity or 42
 local JUMP_GRACE_DURATION: number = 0.05
+local COYOTE_TIME_WINDOW: number = MovementConfig.CoyoteTimeWindow or 0.085 -- @motionbykrit player forgiveness
 local GRAVITY: number = MovementConfig.Gravity or Workspace.Gravity
 local GROUND_ACCELERATE: number = MovementConfig.GroundAccelerate or MovementConfig.Accelerate or 14
 local AIR_ACCELERATE: number = MovementConfig.AirAccelerate or 120
@@ -37,12 +40,14 @@ local MovementController = {
 	IsSliding = false,
 	Velocity = Vector3.zero,
 	OnLandedCallbacks = {} :: { (impactVelocityY: number) -> () },
+	OnJumpedCallbacks = {} :: { () -> () },
 }
 
 local jumpQueued = false
 local slideQueued = false
 local wasGrounded = false
 local jumpGraceTimer = 0
+local coyoteTimer = 0
 local planarVelocity = Vector3.zero
 local verticalVelocity = 0
 local initialized = false
@@ -269,14 +274,40 @@ function MovementController.Init()
 
 		raycastParams.FilterDescendantsInstances = { character }
 		local groundHit = Workspace:Raycast(
-			rootPart.Position,
-			Vector3.new(0, -GROUND_RAY_LENGTH, 0),
+			rootPart.Position + Vector3.new(0, 1.5, 0),
+			Vector3.new(0, -(GROUND_RAY_LENGTH + 1.5), 0),
 			raycastParams
 		)
 
 		local isGrounded = false
 		if jumpGraceTimer <= 0 then
 			isGrounded = groundHit ~= nil and groundHit.Normal.Y >= 0.5 and verticalVelocity <= 0.01
+		end
+
+		-- Check for Sky Island JumpTrigger pad or parent JumpPad
+		if groundHit and jumpGraceTimer <= 0 then
+			local hitPart = groundHit.Instance
+			local jumpTrigger: BasePart? = nil
+			if hitPart.Name == "JumpTrigger" then
+				jumpTrigger = hitPart
+			elseif hitPart.Parent then
+				local sibling = hitPart.Parent:FindFirstChild("JumpTrigger")
+				if sibling and sibling:IsA("BasePart") then
+					jumpTrigger = sibling
+				end
+			end
+
+			if jumpTrigger then
+				local targetVal = jumpTrigger:FindFirstChild("TargetPosition")
+				if targetVal and targetVal:IsA("Vector3Value") then
+					local delta = targetVal.Value - rootPart.Position
+					local flightTime = 1.15
+					planarVelocity = Vector3.new(delta.X / flightTime, 0, delta.Z / flightTime)
+					verticalVelocity = (delta.Y / flightTime) + (0.5 * GRAVITY * flightTime)
+					jumpGraceTimer = 1.2
+					isGrounded = false
+				end
+			end
 		end
 
 		local landedThisFrame = isGrounded and not wasGrounded
@@ -292,13 +323,23 @@ function MovementController.Init()
 			end
 		end
 
-		-- Auto-Bhop: on landing frame (or while grounded), if jumpQueued is true,
-		-- immediately apply JumpVelocity, start the 0.05s grace window, and mark airborne
-		-- so QuakeMath.ApplyFriction is bypassed.
-		if isGrounded and jumpQueued then
+		-- Auto-Bhop + Coyote Time Forgiveness (@motionbykrit):
+		-- on landing frame, while grounded, or within CoyoteTimeWindow after stepping off a ledge,
+		-- if jumpQueued is true, immediately apply JumpVelocity and bypass ground friction.
+		if isGrounded then
+			coyoteTimer = COYOTE_TIME_WINDOW
+		else
+			coyoteTimer = math.max(0, coyoteTimer - dt)
+		end
+
+		if (isGrounded or coyoteTimer > 0) and jumpQueued and jumpGraceTimer <= 0 then
 			verticalVelocity = JUMP_VELOCITY
 			jumpGraceTimer = JUMP_GRACE_DURATION
+			coyoteTimer = 0
 			isGrounded = false
+			for _, cb in MovementController.OnJumpedCallbacks do
+				task.spawn(cb)
+			end
 		elseif isGrounded then
 			verticalVelocity = 0
 		end
@@ -330,9 +371,10 @@ function MovementController.Init()
 		end
 
 		local currentSpeed = planarVelocity.Magnitude
-		if currentSpeed > HARD_SPEED_CAP then
-			planarVelocity = planarVelocity.Unit * HARD_SPEED_CAP
-			currentSpeed = HARD_SPEED_CAP
+		local activeSpeedCap = if jumpGraceTimer > 0.08 then 160 else HARD_SPEED_CAP
+		if currentSpeed > activeSpeedCap then
+			planarVelocity = planarVelocity.Unit * activeSpeedCap
+			currentSpeed = activeSpeedCap
 		end
 
 		-- Check 3.6-stud upward clearance before allowing the character to uncrouch
@@ -353,6 +395,35 @@ function MovementController.Init()
 		)
 
 		local finalVelocity = Vector3.new(planarVelocity.X, verticalVelocity, planarVelocity.Z)
+		if isGrounded and groundHit then
+			local targetFootClearance = if SlideController.IsCrouched
+				then SLIDING_FOOT_CLEARANCE
+				else STANDING_FOOT_CLEARANCE
+			local targetRootY = groundHit.Position.Y + targetFootClearance
+			local heightError = targetRootY - rootPart.Position.Y
+			if heightError > 0.35 then
+				-- Pop character out if embedded inside floor geometry
+				rootPart.CFrame = rootPart.CFrame + Vector3.new(0, heightError, 0)
+				finalVelocity = Vector3.new(planarVelocity.X, 0, planarVelocity.Z)
+			elseif heightError < -0.5 then
+				-- Still above the floor surface; let gravity pull down smoothly
+				finalVelocity = Vector3.new(planarVelocity.X, -18, planarVelocity.Z)
+			else
+				-- Gently correct sinking caused by Roblox gravity while EvaluateStateMachine is false
+				local correctionVelY = math.clamp(heightError * 30, -12, 28)
+				finalVelocity = Vector3.new(planarVelocity.X, correctionVelY, planarVelocity.Z)
+			end
+		end
+
+		-- Lock character upright and aligned to camera horizontal yaw so disabled EvaluateStateMachine never tips/spins the rig
+		local currentPos = rootPart.Position
+		local camera = Workspace.CurrentCamera
+		local lookVec = if camera then camera.CFrame.LookVector else rootPart.CFrame.LookVector
+		local flatLook = Vector3.new(lookVec.X, 0, lookVec.Z)
+		if flatLook.Magnitude > 1e-3 then
+			rootPart.CFrame = CFrame.lookAt(currentPos, currentPos + flatLook.Unit)
+		end
+		rootPart.AssemblyAngularVelocity = Vector3.zero
 		rootPart.AssemblyLinearVelocity = finalVelocity
 
 		wasGrounded = isGrounded

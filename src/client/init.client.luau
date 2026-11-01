@@ -1,5 +1,11 @@
 --!strict
 
+local Players = game:GetService("Players")
+local localPlayer = Players.LocalPlayer
+if localPlayer then
+	localPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
+end
+
 local function requireClientModule(moduleName: string, directPath: Instance?): any
 	if directPath and directPath:IsA("ModuleScript") then
 		return require(directPath)
@@ -34,14 +40,25 @@ local EconomyClient = requireClientModule("EconomyClient", script.combat:FindFir
 local HudApp = requireClientModule("HudApp", script.ui:FindFirstChild("HudApp"))
 local LobbyApp = requireClientModule("LobbyApp", script.ui:FindFirstChild("LobbyApp"))
 
-TracerPool.Init()
-SlideController.Init()
-MovementController.Init()
-ViewmodelController.Init()
-WeaponController.Init()
-GraphicsController.Init()
-VFXController.Init()
-AudioController.Init()
-EconomyClient.Init()
-HudApp.Init()
-LobbyApp.Init()
+local function safeClientInit(name: string, mod: any)
+	if type(mod) == "table" and type(mod.Init) == "function" then
+		task.spawn(function()
+			local ok, err = pcall(mod.Init)
+			if not ok then
+				warn(`[ClientBootstrap] {name}.Init() failed: {tostring(err)}`)
+			end
+		end)
+	end
+end
+
+safeClientInit("TracerPool", TracerPool)
+safeClientInit("SlideController", SlideController)
+safeClientInit("MovementController", MovementController)
+safeClientInit("GraphicsController", GraphicsController)
+safeClientInit("VFXController", VFXController)
+safeClientInit("AudioController", AudioController)
+safeClientInit("ViewmodelController", ViewmodelController)
+safeClientInit("WeaponController", WeaponController)
+safeClientInit("EconomyClient", EconomyClient)
+safeClientInit("HudApp", HudApp)
+safeClientInit("LobbyApp", LobbyApp)

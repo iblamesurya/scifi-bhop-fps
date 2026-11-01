@@ -97,8 +97,98 @@ type WeaponOption = {
 
 local WEAPON_OPTIONS: { WeaponOption } = {
 	{
+		Id = "M4A1_Carbine",
+		Title = "[3] M4A1 SOPMOD II",
+		Class = "ASSAULT RIFLE // 5.56MM NATO AUTO",
+		DefaultDmg = 28,
+		DefaultHs = 51,
+		DefaultRpm = 780,
+		DefaultMag = 30,
+		Description = "CNC octagonal forged carbine with EOTech EXPS3, G33 magnifier, and forward-curved PMAG.",
+	},
+	{
+		Id = "MP5_Tactical",
+		Title = "[4] HK MP5A3 TACTICAL",
+		Class = "SUBMACHINE GUN // 9MM ROLLER-DELAYED",
+		DefaultDmg = 21,
+		DefaultHs = 34,
+		DefaultRpm = 920,
+		DefaultMag = 35,
+		Description = "High-cadence suppressed CQC submachine gun with Aimpoint T2 and low-recoil air-strafe tracking.",
+	},
+	{
+		Id = "AWM_Sniper",
+		Title = "[5] AWM L115A3 .338",
+		Class = "SNIPER RIFLE // .338 LAPUA MAGNUM",
+		DefaultDmg = 105,
+		DefaultHs = 262,
+		DefaultRpm = 46,
+		DefaultMag = 5,
+		Description = "Accuracy International olive-drab chassis sniper with Schmidt & Bender PM II 8x optic.",
+	},
+	{
+		Id = "M1014_Shotgun",
+		Title = "[6] BENELLI M1014",
+		Class = "COMBAT SHOTGUN // 12-GAUGE 8-PELLET",
+		DefaultDmg = 16,
+		DefaultHs = 25,
+		DefaultRpm = 115,
+		DefaultMag = 8,
+		Description = "Semi-auto breacher shotgun with Trijicon RMR co-witnessed ghost rings and shell saddle.",
+	},
+	{
+		Id = "M249_MachineGun",
+		Title = "[7] FN M249 PARA SAW",
+		Class = "LIGHT MACHINE GUN // 100-RD BELT",
+		DefaultDmg = 31,
+		DefaultHs = 54,
+		DefaultRpm = 820,
+		DefaultMag = 100,
+		Description = "Sustained-fire squad automatic weapon with 100-round disintegrating brass link box.",
+	},
+	{
+		Id = "G19X_Pistol",
+		Title = "[8] GLOCK-19X MOS",
+		Class = "SIDEARM PISTOL // 9MM COMPENSATED",
+		DefaultDmg = 26,
+		DefaultHs = 52,
+		DefaultRpm = 420,
+		DefaultMag = 19,
+		Description = "Coyote tan custom sidearm with gold TiN match barrel, agency compensator, and RMR.",
+	},
+	{
+		Id = "M67_Frag",
+		Title = "[9] M67 FRAG GRENADE",
+		Class = "ORDNANCE // COMP-B FRAGMENTATION",
+		DefaultDmg = 135,
+		DefaultHs = 135,
+		DefaultRpm = 45,
+		DefaultMag = 1,
+		Description = "Spheroidal steel fragmentation grenade with M213 delay fuze and safety spoon.",
+	},
+	{
+		Id = "KABAR_Knife",
+		Title = "[0] KA-BAR USMC 1217",
+		Class = "MELEE BLADE // 1095 CRO-VAN BOWIE",
+		DefaultDmg = 55,
+		DefaultHs = 110,
+		DefaultRpm = 135,
+		DefaultMag = 1,
+		Description = "Stacked leather washer fighting knife with clip-point needle tip and blood fuller.",
+	},
+	{
+		Id = "Tactical_Bat",
+		Title = "[-] TACTICAL SLUGGER",
+		Class = "HEAVY MELEE // BARBED WIRE & CLEAVER",
+		DefaultDmg = 78,
+		DefaultHs = 136,
+		DefaultRpm = 75,
+		DefaultMag = 1,
+		Description = "Lathe-turned ash wood bat reinforced with steel collars, cleaver fins, and barbed wire.",
+	},
+	{
 		Id = "VORTEX_SMG",
-		Title = "VORTEX_SMG",
+		Title = "[1] VORTEX_SMG",
 		Class = "PLASMA SUBMACHINE GUN // CQC-VELOCITY",
 		DefaultDmg = 18,
 		DefaultHs = 36,
@@ -108,7 +198,7 @@ local WEAPON_OPTIONS: { WeaponOption } = {
 	},
 	{
 		Id = "HELIOS_RAIL",
-		Title = "HELIOS_RAIL",
+		Title = "[2] HELIOS_RAIL",
 		Class = "LINEAR ACCELERATOR RAILGUN // PRECISION",
 		DefaultDmg = 95,
 		DefaultHs = 237,
@@ -324,8 +414,7 @@ local function refreshEconomySubtitle()
 end
 
 local function syncLobbyState()
-	local inArena = LocalPlayer:GetAttribute("InArena") == true
-	local showLobby = (not inArena) or manualOverlayOpen
+	local showLobby = manualOverlayOpen
 
 	LocalPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
 
@@ -334,6 +423,8 @@ local function syncLobbyState()
 	end
 	if deployBtnRef then
 		deployBtnRef.Modal = showLobby
+		local inArena = LocalPlayer:GetAttribute("InArena") == true
+		deployBtnRef.Text = if inArena then "REDEPLOY TO PHANTOM MIDWAY 5v5" else "DEPLOY TO PHANTOM MIDWAY 5v5"
 	end
 
 	if showLobby then
@@ -421,7 +512,7 @@ function LobbyApp.Init()
 	refreshEconomySubtitle()
 
 	-- =========================================================================
-	-- LEFT COLUMN: PRIMARY WEAPON SELECTION (VORTEX_SMG / HELIOS_RAIL)
+	-- LEFT COLUMN: 9-WEAPON CAD ARSENAL + STARTER SELECTOR (SCROLLABLE)
 	-- =========================================================================
 	local loadoutHeader = Instance.new("TextLabel")
 	loadoutHeader.Name = "LoadoutHeader"
@@ -429,77 +520,92 @@ function LobbyApp.Init()
 	loadoutHeader.Position = UDim2.fromOffset(24, 76)
 	loadoutHeader.Size = UDim2.fromOffset(440, 18)
 	loadoutHeader.Font = Enum.Font.Code
-	loadoutHeader.Text = "PRIMARY WEAPON SELECT"
-	loadoutHeader.TextSize = 13
+	loadoutHeader.Text = "ARSENAL WEAPON SUITE SELECT (SCROLL // KEYS 1-9, 0, -, H=SKIN)"
+	loadoutHeader.TextSize = 12
 	loadoutHeader.TextColor3 = COLOR_TEXT_MAIN
 	loadoutHeader.TextXAlignment = Enum.TextXAlignment.Left
 	loadoutHeader.Parent = mainPanel
 
+	local weaponScroll = Instance.new("ScrollingFrame")
+	weaponScroll.Name = "WeaponScrollList"
+	weaponScroll.Position = UDim2.fromOffset(24, 100)
+	weaponScroll.Size = UDim2.fromOffset(456, 252)
+	weaponScroll.BackgroundTransparency = 1
+	weaponScroll.BorderSizePixel = 0
+	weaponScroll.ScrollBarThickness = 5
+	weaponScroll.ScrollBarImageColor3 = COLOR_NEON_CYAN
+	weaponScroll.CanvasSize = UDim2.fromOffset(0, #WEAPON_OPTIONS * 102)
+	weaponScroll.Parent = mainPanel
+
 	for idx, weapon in ipairs(WEAPON_OPTIONS) do
-		local yOffset = 100 + (idx - 1) * 130
+		local yOffset = (idx - 1) * 100
 		local card = Instance.new("Frame")
 		card.Name = weapon.Id .. "_Card"
-		card.Position = UDim2.fromOffset(24, yOffset)
-		card.Size = UDim2.fromOffset(450, 118)
-		card.Parent = mainPanel
+		card.Position = UDim2.fromOffset(2, yOffset + 2)
+		card.Size = UDim2.fromOffset(442, 92)
+		card.Parent = weaponScroll
 		local stroke = styleGlassPanel(card, COLOR_BORDER_IDLE, 1)
 
 		local nameLabel = Instance.new("TextLabel")
 		nameLabel.BackgroundTransparency = 1
-		nameLabel.Position = UDim2.fromOffset(16, 10)
-		nameLabel.Size = UDim2.fromOffset(240, 22)
+		nameLabel.Position = UDim2.fromOffset(14, 6)
+		nameLabel.Size = UDim2.fromOffset(260, 20)
 		nameLabel.Font = Enum.Font.Code
 		nameLabel.Text = weapon.Title
-		nameLabel.TextSize = 18
+		nameLabel.TextSize = 16
 		nameLabel.TextColor3 = COLOR_TEXT_MAIN
 		nameLabel.TextXAlignment = Enum.TextXAlignment.Left
 		nameLabel.Parent = card
 
 		local badge = Instance.new("TextLabel")
 		badge.BackgroundTransparency = 1
-		badge.Position = UDim2.new(1, -176, 0, 12)
-		badge.Size = UDim2.fromOffset(160, 18)
+		badge.Position = UDim2.new(1, -166, 0, 8)
+		badge.Size = UDim2.fromOffset(152, 16)
 		badge.Font = Enum.Font.Code
 		badge.Text = "CLICK TO EQUIP"
-		badge.TextSize = 12
+		badge.TextSize = 11
 		badge.TextColor3 = COLOR_TEXT_SUB
 		badge.TextXAlignment = Enum.TextXAlignment.Right
 		badge.Parent = card
 
 		local classLabel = Instance.new("TextLabel")
 		classLabel.BackgroundTransparency = 1
-		classLabel.Position = UDim2.fromOffset(16, 34)
-		classLabel.Size = UDim2.new(1, -32, 0, 16)
+		classLabel.Position = UDim2.fromOffset(14, 26)
+		classLabel.Size = UDim2.new(1, -28, 0, 14)
 		classLabel.Font = Enum.Font.Code
 		classLabel.Text = weapon.Class
-		classLabel.TextSize = 11
+		classLabel.TextSize = 10
 		classLabel.TextColor3 = COLOR_NEON_CYAN
 		classLabel.TextXAlignment = Enum.TextXAlignment.Left
 		classLabel.Parent = card
 
 		local statsLabel = Instance.new("TextLabel")
 		statsLabel.BackgroundTransparency = 1
-		statsLabel.Position = UDim2.fromOffset(16, 54)
-		statsLabel.Size = UDim2.new(1, -32, 0, 18)
+		statsLabel.Position = UDim2.fromOffset(14, 42)
+		statsLabel.Size = UDim2.new(1, -28, 0, 16)
 		statsLabel.Font = Enum.Font.Code
 		statsLabel.Text = buildWeaponStatsText(weapon)
-		statsLabel.TextSize = 12
+		statsLabel.TextSize = 11
 		statsLabel.TextColor3 = COLOR_OVERDRIVE_ORANGE
 		statsLabel.TextXAlignment = Enum.TextXAlignment.Left
 		statsLabel.Parent = card
 
 		local descLabel = Instance.new("TextLabel")
 		descLabel.BackgroundTransparency = 1
-		descLabel.Position = UDim2.fromOffset(16, 76)
-		descLabel.Size = UDim2.new(1, -32, 0, 32)
+		descLabel.Position = UDim2.fromOffset(14, 60)
+		descLabel.Size = UDim2.new(1, -28, 0, 28)
 		descLabel.Font = Enum.Font.Code
 		descLabel.Text = weapon.Description
 		descLabel.TextWrapped = true
-		descLabel.TextSize = 11
+		descLabel.TextSize = 10
 		descLabel.TextColor3 = COLOR_TEXT_SUB
 		descLabel.TextXAlignment = Enum.TextXAlignment.Left
 		descLabel.TextYAlignment = Enum.TextYAlignment.Top
 		descLabel.Parent = card
+
+		local cardScale = Instance.new("UIScale")
+		cardScale.Scale = 1.0
+		cardScale.Parent = card
 
 		local selectBtn = Instance.new("TextButton")
 		selectBtn.Name = "Select_" .. weapon.Id
@@ -507,6 +613,20 @@ function LobbyApp.Init()
 		selectBtn.BackgroundTransparency = 1
 		selectBtn.Text = ""
 		selectBtn.Parent = card
+
+		-- @motionbykrit: Physical cards pop on hover and squash-overshoot on press
+		selectBtn.MouseEnter:Connect(function()
+			cardScale.Scale = 1.022
+		end)
+		selectBtn.MouseLeave:Connect(function()
+			cardScale.Scale = 1.0
+		end)
+		selectBtn.MouseButton1Down:Connect(function()
+			cardScale.Scale = 0.965
+		end)
+		selectBtn.MouseButton1Up:Connect(function()
+			cardScale.Scale = 1.025
+		end)
 
 		selectBtn.Activated:Connect(function()
 			selectedWeaponId = weapon.Id
@@ -539,7 +659,7 @@ function LobbyApp.Init()
 	local recordsCard = Instance.new("Frame")
 	recordsCard.Name = "RecordsBoard"
 	recordsCard.Position = UDim2.fromOffset(496, 100)
-	recordsCard.Size = UDim2.fromOffset(300, 180)
+	recordsCard.Size = UDim2.fromOffset(300, 114)
 	recordsCard.Parent = mainPanel
 	styleGlassPanel(recordsCard, COLOR_BORDER_IDLE, 1)
 
@@ -548,20 +668,65 @@ function LobbyApp.Init()
 		local row = Instance.new("TextLabel")
 		row.Name = string.format("RecordRow_%d", i)
 		row.BackgroundTransparency = 1
-		row.Position = UDim2.fromOffset(14, 12 + (i - 1) * 31)
-		row.Size = UDim2.new(1, -28, 0, 24)
+		row.Position = UDim2.fromOffset(14, 6 + (i - 1) * 20)
+		row.Size = UDim2.new(1, -28, 0, 18)
 		row.Font = Enum.Font.Code
-		row.TextSize = 13
+		row.TextSize = 11
 		row.TextXAlignment = Enum.TextXAlignment.Left
 		row.Parent = recordsCard
 		table.insert(recordRowLabels, row)
 	end
 
+	-- @yelik.dev Shop Psychology: 49 R$ Starter Pack + Decoy vs. Target Pro Pack + 100% Crate Odds
+	local bundlesCard = Instance.new("Frame")
+	bundlesCard.Name = "ShopPsychologyBundlesCard"
+	bundlesCard.Position = UDim2.fromOffset(496, 220)
+	bundlesCard.Size = UDim2.fromOffset(300, 82)
+	bundlesCard.Parent = mainPanel
+	styleGlassPanel(bundlesCard, COLOR_OVERDRIVE_ORANGE, 1)
+
+	local starterLine = Instance.new("TextLabel")
+	starterLine.Name = "StarterPackLine"
+	starterLine.BackgroundTransparency = 1
+	starterLine.Position = UDim2.fromOffset(10, 6)
+	starterLine.Size = UDim2.new(1, -20, 0, 16)
+	starterLine.Font = Enum.Font.Code
+	starterLine.Text = "[49 R$] STARTER PACK: +1500 FLUX + OVERDRIVE AURA"
+	starterLine.TextSize = 10
+	starterLine.TextColor3 = COLOR_NEON_CYAN
+	starterLine.TextXAlignment = Enum.TextXAlignment.Left
+	starterLine.Parent = bundlesCard
+
+	local decoyVsTargetLine = Instance.new("TextLabel")
+	decoyVsTargetLine.Name = "DecoyVsTargetLine"
+	decoyVsTargetLine.BackgroundTransparency = 1
+	decoyVsTargetLine.Position = UDim2.fromOffset(10, 24)
+	decoyVsTargetLine.Size = UDim2.new(1, -20, 0, 30)
+	decoyVsTargetLine.Font = Enum.Font.Code
+	decoyVsTargetLine.Text = "STANDARD x3 [349 R$]  vs  PRO VAULT x10 [399 R$ // BEST VALUE 3.3X]"
+	decoyVsTargetLine.TextWrapped = true
+	decoyVsTargetLine.TextSize = 10
+	decoyVsTargetLine.TextColor3 = COLOR_OVERDRIVE_ORANGE
+	decoyVsTargetLine.TextXAlignment = Enum.TextXAlignment.Left
+	decoyVsTargetLine.Parent = bundlesCard
+
+	local oddsDisclosureLine = Instance.new("TextLabel")
+	oddsDisclosureLine.Name = "CrateOddsDisclosure"
+	oddsDisclosureLine.BackgroundTransparency = 1
+	oddsDisclosureLine.Position = UDim2.fromOffset(10, 58)
+	oddsDisclosureLine.Size = UDim2.new(1, -20, 0, 18)
+	oddsDisclosureLine.Font = Enum.Font.Code
+	oddsDisclosureLine.Text = "ODDS (100%): GOLD 5% | VOID 15% | HYPERION 30% | MIL 50%"
+	oddsDisclosureLine.TextSize = 9
+	oddsDisclosureLine.TextColor3 = COLOR_TEXT_SUB
+	oddsDisclosureLine.TextXAlignment = Enum.TextXAlignment.Left
+	oddsDisclosureLine.Parent = bundlesCard
+
 	-- Competitive 240FPS Mode Toggle Button
 	local fpsToggleBtn = Instance.new("TextButton")
 	fpsToggleBtn.Name = "Competitive240Toggle"
-	fpsToggleBtn.Position = UDim2.fromOffset(496, 294)
-	fpsToggleBtn.Size = UDim2.fromOffset(300, 54)
+	fpsToggleBtn.Position = UDim2.fromOffset(496, 308)
+	fpsToggleBtn.Size = UDim2.fromOffset(300, 48)
 	fpsToggleBtn.AutoButtonColor = false
 	fpsToggleBtn.Text = ""
 	fpsToggleBtn.Parent = mainPanel
@@ -597,17 +762,17 @@ function LobbyApp.Init()
 	end)
 
 	-- =========================================================================
-	-- BOTTOM ACTION: DEPLOY TO ARENA BUTTON
+	-- BOTTOM ACTIONS: DEPLOY TO ARENA & RETURN TO SKY ISLAND LOBBY
 	-- =========================================================================
 	local deployBtn = Instance.new("TextButton")
 	deployBtn.Name = "DeployToArenaButton"
 	deployBtn.Position = UDim2.fromOffset(24, 376)
-	deployBtn.Size = UDim2.fromOffset(772, 66)
+	deployBtn.Size = UDim2.fromOffset(510, 66)
 	deployBtn.BackgroundColor3 = Color3.fromRGB(12, 28, 38)
 	deployBtn.BackgroundTransparency = 0.15
 	deployBtn.Font = Enum.Font.Code
-	deployBtn.Text = "DEPLOY TO ARENA"
-	deployBtn.TextSize = 22
+	deployBtn.Text = "DEPLOY TO PHANTOM MIDWAY 5v5"
+	deployBtn.TextSize = 20
 	deployBtn.TextColor3 = COLOR_NEON_CYAN
 	deployBtn.Parent = mainPanel
 
@@ -634,16 +799,45 @@ function LobbyApp.Init()
 	deployBtn.Activated:Connect(handleDeployClicked)
 	deployBtnRef = deployBtn
 
-	-- Keybind (M or B) to reopen/toggle Loadout overlay while in Arena
+	local returnLobbyBtn = Instance.new("TextButton")
+	returnLobbyBtn.Name = "ReturnToLobbyButton"
+	returnLobbyBtn.Position = UDim2.fromOffset(546, 376)
+	returnLobbyBtn.Size = UDim2.fromOffset(250, 66)
+	returnLobbyBtn.BackgroundColor3 = Color3.fromRGB(18, 22, 32)
+	returnLobbyBtn.BackgroundTransparency = 0.15
+	returnLobbyBtn.Font = Enum.Font.Code
+	returnLobbyBtn.Text = "SKY ISLAND LOBBY"
+	returnLobbyBtn.TextSize = 18
+	returnLobbyBtn.TextColor3 = COLOR_OVERDRIVE_ORANGE
+	returnLobbyBtn.Parent = mainPanel
+
+	local returnCorner = Instance.new("UICorner")
+	returnCorner.CornerRadius = UDim.new(0, 6)
+	returnCorner.Parent = returnLobbyBtn
+
+	local returnStroke = Instance.new("UIStroke")
+	returnStroke.Color = COLOR_OVERDRIVE_ORANGE
+	returnStroke.Thickness = 1.5
+	returnStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	returnStroke.Parent = returnLobbyBtn
+
+	returnLobbyBtn.Activated:Connect(function()
+		manualOverlayOpen = false
+		syncLobbyState()
+		local requestDeploy = ReplicatedStorage:WaitForChild("RequestDeploy", 5)
+		if requestDeploy and requestDeploy:IsA("RemoteEvent") then
+			requestDeploy:FireServer("RETURN_TO_LOBBY")
+		end
+	end)
+
+	-- Keybind (M or B) to toggle Loadout & Deploy overlay in both Lobby and Arena
 	UserInputService.InputBegan:Connect(function(input: InputObject, gameProcessed: boolean)
 		if gameProcessed then
 			return
 		end
 		if input.KeyCode == Enum.KeyCode.M or input.KeyCode == Enum.KeyCode.B then
-			if LocalPlayer:GetAttribute("InArena") == true then
-				manualOverlayOpen = not manualOverlayOpen
-				syncLobbyState()
-			end
+			manualOverlayOpen = not manualOverlayOpen
+			syncLobbyState()
 		end
 	end)
 

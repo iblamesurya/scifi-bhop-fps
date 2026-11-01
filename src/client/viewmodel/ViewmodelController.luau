@@ -94,7 +94,7 @@ local function createSpring(stiffness: number, damping: number, mass: number?): 
 end
 
 local RENDER_STEP_NAME = "SciFiViewmodelRender"
-local HIP_OFFSET = CFrame.new(0.48, -0.42, -0.78)
+local HIP_OFFSET = CFrame.new(0.55, -0.78, -1.05)
 local ADS_EYE_RELIEF = CFrame.new(0, 0, -0.55)
 local STRAFE_ROLL_DEG = 4.5
 local SLIDE_ROLL_DEG = -8.0
@@ -125,6 +125,10 @@ local swaySpring = createSpring(140, 16, 1)
 local recoilPosSpring = createSpring(180, 18, 1)
 local recoilRotSpring = createSpring(200, 16, 1)
 local landingSpring = createSpring(150, 14, 1)
+local cameraShakeSpring = createSpring(240, 15, 1)
+
+-- @motionbykrit Game Feel & Juice: 2-4 frame micro-hitstop freeze
+local hitstopFramesRemaining = 0
 
 local inputConnections: { RBXScriptConnection } = {}
 
@@ -360,6 +364,33 @@ local function updateRenderStep(dt: number)
 		activeViewmodel.Parent = camera
 	end
 
+	-- Force strict First-Person camera lock & hide all local character body parts/hair/accessories
+	local localPlayer = Players.LocalPlayer
+	if localPlayer then
+		if localPlayer.CameraMode ~= Enum.CameraMode.LockFirstPerson then
+			localPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
+		end
+		local char = localPlayer.Character
+		if char then
+			for _, desc in char:GetDescendants() do
+				if desc:IsA("BasePart") then
+					desc.LocalTransparencyModifier = 1
+				end
+			end
+		end
+	end
+
+	-- @motionbykrit: 2-4 frame hitstop freeze at moment of contact + proportional camera shake
+	local effectiveDt = dt
+	if hitstopFramesRemaining > 0 then
+		hitstopFramesRemaining -= 1
+		effectiveDt = dt * 0.08
+	end
+	local camShake = cameraShakeSpring:Update(dt)
+	if camShake.Magnitude > 1e-4 then
+		camera.CFrame = camera.CFrame * CFrame.Angles(camShake.X, camShake.Y, camShake.Z)
+	end
+
 	-- 1. Mouse delta sway & springs
 	local mouseDelta = UserInputService:GetMouseDelta()
 	local swayScale = if isADSState then 0.0012 else 0.0032
@@ -368,10 +399,10 @@ local function updateRenderStep(dt: number)
 		math.clamp(mouseDelta.Y * swayScale, -0.14, 0.14),
 		0
 	)
-	local swayPos = swaySpring:Update(dt)
-	local recoilPos = recoilPosSpring:Update(dt)
-	local recoilRot = recoilRotSpring:Update(dt)
-	local landingOffset = landingSpring:Update(dt)
+	local swayPos = swaySpring:Update(effectiveDt)
+	local recoilPos = recoilPosSpring:Update(effectiveDt)
+	local recoilRot = recoilRotSpring:Update(effectiveDt)
+	local landingOffset = landingSpring:Update(effectiveDt)
 
 	-- 2. Air-strafe roll tilt (±4.5° on A/D, -8° on slide)
 	local strafeInput = 0
@@ -382,14 +413,15 @@ local function updateRenderStep(dt: number)
 		strafeInput -= 1
 	end
 
-	local targetRollDeg = if isSlidingActive() then SLIDE_ROLL_DEG else (strafeInput * STRAFE_ROLL_DEG)
+	local rawRollDeg = if isSlidingActive() then SLIDE_ROLL_DEG else (strafeInput * STRAFE_ROLL_DEG)
+	local targetRollDeg = rawRollDeg * (1 - adsAlpha * 0.92)
 	local targetRollRad = math.rad(targetRollDeg)
 	local rollLerpAlpha = 1 - math.exp(-14 * dt)
 	currentRollRad = currentRollRad + (targetRollRad - currentRollRad) * rollLerpAlpha
 
 	-- 3. Subtle movement velocity bob
 	local speed = getHorizontalSpeed()
-	local bobAmplitude = math.clamp(speed / 28, 0, 1.2) * (if isADSState then 0.006 else 0.025)
+	local bobAmplitude = math.clamp(speed / 28, 0, 1.2) * (if isADSState then 0.002 else 0.025)
 	bobPhase += dt * math.clamp(speed * 0.45, 2.5, 14)
 	local bobX = math.cos(bobPhase) * bobAmplitude
 	local bobY = math.abs(math.sin(bobPhase)) * -bobAmplitude
@@ -534,19 +566,43 @@ function ViewmodelController.IsADS(): boolean
 	return isADSState
 end
 
+-- @motionbykrit: Freeze 2-4 frames on contact + proportional camera shake
+function ViewmodelController.TriggerHitstop(frames: number?, shakeIntensity: number?)
+	hitstopFramesRemaining = math.clamp(frames or 2, 1, 4)
+	local intensity = shakeIntensity or 0.018
+	cameraShakeSpring:Impulse(Vector3.new(
+		intensity * 1.2,
+		(math.random() - 0.5) * intensity * 1.4,
+		(math.random() - 0.5) * intensity * 1.6
+	))
+end
+
+-- @motionbykrit: Stretch viewmodel upward during jump rise
+function ViewmodelController.TriggerJumpStretch()
+	landingSpring:Impulse(Vector3.new(0, 1.35, -0.18))
+end
+
 function ViewmodelController.Init()
 	if isInitialized then
 		return
 	end
 	isInitialized = true
 
-	-- Subscribe landing compression spring to MovementController.OnLandedCallbacks
-	if type(MovementController) == "table" and type(MovementController.OnLandedCallbacks) == "table" then
-		table.insert(MovementController.OnLandedCallbacks, function(impactSpeed: number?)
-			local speed = if type(impactSpeed) == "number" then math.abs(impactSpeed) else 28
-			local compression = math.clamp(speed / 55, 0.2, 1.35)
-			landingSpring:Impulse(Vector3.new(0, -compression * 2.2, 0))
-		end)
+	-- Subscribe landing compression spring + jump stretch to MovementController
+	if type(MovementController) == "table" then
+		if type(MovementController.OnLandedCallbacks) == "table" then
+			table.insert(MovementController.OnLandedCallbacks, function(impactSpeed: number?)
+				local speed = if type(impactSpeed) == "number" then math.abs(impactSpeed) else 28
+				local compression = math.clamp(speed / 55, 0.2, 1.35)
+				landingSpring:Impulse(Vector3.new(0, -compression * 2.2, 0))
+				cameraShakeSpring:Impulse(Vector3.new(-compression * 0.025, 0, 0))
+			end)
+		end
+		if type(MovementController.OnJumpedCallbacks) == "table" then
+			table.insert(MovementController.OnJumpedCallbacks, function()
+				ViewmodelController.TriggerJumpStretch()
+			end)
+		end
 	end
 
 	-- Track right mouse button ADS state
