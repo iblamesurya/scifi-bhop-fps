@@ -536,7 +536,8 @@ local function spawnSymmetricalVehiclePair(baseName: string, variant: string, al
 
 		local alarm = Instance.new("Sound")
 		alarm.Name = "CarAlarmSound"
-		alarm.SoundId = AssetRegistry.Audio.Environment.CarAlarmSound
+		local envAudio = (AssetRegistry.Audio :: any).Environment
+		alarm.SoundId = if envAudio and envAudio.CarAlarmSound then envAudio.CarAlarmSound else AssetRegistry.Audio.Movement.WindRushLoop
 		alarm.Volume = 0.8
 		alarm.RollOffMaxDistance = 85
 		alarm.Looped = true

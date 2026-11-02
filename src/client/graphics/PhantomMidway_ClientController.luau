@@ -44,12 +44,14 @@ local impactPool: { ImpactPoolSlot } = table.create(IMPACT_POOL_SIZE)
 local impactPoolIndex = 1
 local poolInitialized = false
 
+local envAudio = (AssetRegistry.Audio :: any).Environment or {}
+local fallbackImpact = AssetRegistry.Audio.Movement.FootstepMetal
 local IMPACT_SOUNDS: { [Enum.Material]: string } = {
-	[Enum.Material.Concrete] = AssetRegistry.Audio.Environment.ImpactConcrete,
-	[Enum.Material.Asphalt] = AssetRegistry.Audio.Environment.ImpactAsphalt,
-	[Enum.Material.Metal] = AssetRegistry.Audio.Environment.ImpactMetal,
-	[Enum.Material.Glass] = AssetRegistry.Audio.Environment.ImpactGlass,
-	[Enum.Material.WoodPlanks] = AssetRegistry.Audio.Environment.ImpactWoodPlanks,
+	[Enum.Material.Concrete] = envAudio.ImpactConcrete or fallbackImpact,
+	[Enum.Material.Asphalt] = envAudio.ImpactAsphalt or fallbackImpact,
+	[Enum.Material.Metal] = envAudio.ImpactMetal or fallbackImpact,
+	[Enum.Material.Glass] = envAudio.ImpactGlass or fallbackImpact,
+	[Enum.Material.WoodPlanks] = envAudio.ImpactWoodPlanks or fallbackImpact,
 }
 
 local function initImpactPool()
@@ -66,7 +68,7 @@ local function initImpactPool()
 
 		local sfx = Instance.new("Sound")
 		sfx.Name = "ImpactSFX"
-		sfx.SoundId = AssetRegistry.Audio.Environment.ImpactConcrete
+		sfx.SoundId = envAudio.ImpactConcrete or fallbackImpact
 		sfx.Volume = 0.55
 		sfx.RollOffMaxDistance = 65
 		sfx.Parent = attachment
@@ -180,7 +182,7 @@ function PhantomMidway_ClientController.Init()
 	if not ambientSound then
 		local newSound = Instance.new("Sound")
 		newSound.Name = "MidwayCoastalAmbience"
-		newSound.SoundId = AssetRegistry.Audio.Environment.MidwayCoastalAmbience
+		newSound.SoundId = envAudio.MidwayCoastalAmbience or AssetRegistry.Audio.Movement.WindRushLoop
 		newSound.Volume = 0.25
 		newSound.Looped = true
 		newSound.Parent = SoundService
