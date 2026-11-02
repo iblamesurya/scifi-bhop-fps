@@ -166,3 +166,15 @@ rojo serve default.project.json
 selene src/
 stylua --check src/
 ```
+
+---
+
+## 6. Project Knowledge Base (Obsidian Vault in `notes/`)
+
+The repository root is an Obsidian vault. Short, linked system notes live in `notes/`.
+
+1. **Read first:** Before editing a system, open `notes/00 Home.md` and read the matching note (e.g. `Movement`, `Combat & Networking`, `Lobby & Match Flow`, `Economy`). Use them as an index into the code, not a replacement for it; if a note disagrees with the source, trust the source and fix the note.
+2. **Update after changes:** When you change behavior, constants, file locations, or architecture, update the relevant note in the same task.
+3. **Log your work:** Append decisions, fixes (with the reason), and open TODOs to `notes/Task Log.md`.
+4. **New systems:** Create a note from `notes/Templates/System Note.md`, store it in `notes/`, and link it from `notes/00 Home.md`.
+5. Keep notes short and factual, include file paths, and use `[[wikilinks]]` for related notes.

@@ -38,6 +38,16 @@ local Audio = table.freeze({
 		SFX_UI_ItemRefund = "rbxassetid://130113370",
 		SFX_HUD_OverdriveKillBounty = "rbxassetid://160432334",
 	}),
+	Environment = table.freeze({
+		CarAlarmSound = "rbxassetid://9114224721",
+		MidwayCoastalAmbience = "rbxassetid://9114222585",
+		ImpactConcrete = "rbxassetid://9119713951",
+		ImpactAsphalt = "rbxassetid://9119713951",
+		ImpactMetal = "rbxassetid://9119720940",
+		ImpactGlass = "rbxassetid://9114488653",
+		ImpactWoodPlanks = "rbxassetid://9119716523",
+		ParkourStep = "rbxassetid://12222225",
+	}),
 })
 
 local UISprites = table.freeze({

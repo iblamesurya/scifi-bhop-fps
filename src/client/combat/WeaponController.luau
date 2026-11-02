@@ -381,6 +381,9 @@ local function attemptFire()
 
 	if rayResult then
 		VFXController.SpawnImpactSparks(rayResult.Position, rayResult.Normal)
+		if rayResult.Instance and type((_G :: any).OnPhantomMidwayRaycastHit) == "function" then
+			(_G :: any).OnPhantomMidwayRaycastHit(rayResult.Instance, rayResult.Position, rayResult.Normal)
+		end
 	end
 
 	local recoilKickPos = stats.RecoilKickPos or stats.RecoilKick or Vector3.new(0, 0, 0.2)

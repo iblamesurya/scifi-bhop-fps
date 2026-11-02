@@ -35,6 +35,10 @@ local GraphicsController = requireClientModule(
 	script.graphics:FindFirstChild("GraphicsController")
 )
 local VFXController = requireClientModule("VFXController", script.graphics:FindFirstChild("VFXController"))
+local PhantomMidwayClient = requireClientModule(
+	"PhantomMidway_ClientController",
+	script.graphics:FindFirstChild("PhantomMidway_ClientController")
+)
 local AudioController = requireClientModule("AudioController", script.audio:FindFirstChild("AudioController"))
 local EconomyClient = requireClientModule("EconomyClient", script.combat:FindFirstChild("EconomyClient"))
 local HudApp = requireClientModule("HudApp", script.ui:FindFirstChild("HudApp"))
@@ -56,6 +60,7 @@ safeClientInit("SlideController", SlideController)
 safeClientInit("MovementController", MovementController)
 safeClientInit("GraphicsController", GraphicsController)
 safeClientInit("VFXController", VFXController)
+safeClientInit("PhantomMidway_ClientController", PhantomMidwayClient)
 safeClientInit("AudioController", AudioController)
 safeClientInit("ViewmodelController", ViewmodelController)
 safeClientInit("WeaponController", WeaponController)
