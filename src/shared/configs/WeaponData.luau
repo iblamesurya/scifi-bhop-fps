@@ -478,16 +478,16 @@ local ARSENAL_ORDER: { string } = table.freeze({
 	"Tactical_Bat",
 })
 
--- Audio/icon keys are placeholders reusing existing registry entries until dedicated assets exist.
+-- Dedicated weapon audio and UI icon keys mapped per subclass
 local ARSENAL_PLACEHOLDER_KEYS: { [string]: { Fire: string, Reload: string, Icon: string } } = {
-	AR = { Fire = "PulseRifleFire", Reload = "PulseRifleReload", Icon = "PulseRifle" },
-	SMG = { Fire = "PulseRifleFire", Reload = "PulseRifleReload", Icon = "PulseRifle" },
-	MachineGun = { Fire = "PulseRifleFire", Reload = "PulseRifleReload", Icon = "PulseRifle" },
-	Sniper = { Fire = "RailgunFire", Reload = "RailgunReload", Icon = "Railgun" },
-	Shotgun = { Fire = "PlasmaShotgunFire", Reload = "PlasmaShotgunReload", Icon = "PlasmaShotgun" },
-	Pistol = { Fire = "IonSidearmFire", Reload = "IonSidearmReload", Icon = "IonSidearm" },
-	Grenade = { Fire = "DryFire", Reload = "DryFire", Icon = "IonSidearm" },
-	Melee = { Fire = "DryFire", Reload = "DryFire", Icon = "IonSidearm" },
+	AR = { Fire = "CarbineFire", Reload = "CarbineReload", Icon = "PulseRifle" },
+	SMG = { Fire = "SMGFire", Reload = "SMGReload", Icon = "PulseRifle" },
+	MachineGun = { Fire = "MachineGunFire", Reload = "MachineGunReload", Icon = "PulseRifle" },
+	Sniper = { Fire = "SniperFire", Reload = "SniperReload", Icon = "Railgun" },
+	Shotgun = { Fire = "ShotgunFire", Reload = "ShotgunReload", Icon = "PlasmaShotgun" },
+	Pistol = { Fire = "PistolFire", Reload = "PistolReload", Icon = "IonSidearm" },
+	Grenade = { Fire = "GrenadeThrow", Reload = "DryFire", Icon = "IonSidearm" },
+	Melee = { Fire = "KnifeSlash", Reload = "DryFire", Icon = "IonSidearm" },
 }
 
 local ARSENAL_FIRST_NUMERIC_ID = 5

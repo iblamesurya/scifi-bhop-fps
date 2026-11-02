@@ -320,6 +320,7 @@ local function attemptFire()
 	end
 
 	if WeaponController.CurrentAmmo <= 0 then
+		AudioController.PlayWeaponSound("DryFire")
 		startReload()
 		return
 	end

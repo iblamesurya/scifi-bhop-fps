@@ -1,9 +1,26 @@
 --!strict
 
 local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
 local localPlayer = Players.LocalPlayer
+
+local function lockFirstPerson()
+	if localPlayer then
+		localPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
+		localPlayer.CameraMinZoomDistance = 0.5
+		localPlayer.CameraMaxZoomDistance = 0.5
+	end
+end
+
+lockFirstPerson()
 if localPlayer then
-	localPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
+	localPlayer.CharacterAdded:Connect(function(char)
+		lockFirstPerson()
+		local humanoid = char:WaitForChild("Humanoid", 5)
+		if humanoid and humanoid:IsA("Humanoid") then
+			humanoid.CameraOffset = Vector3.zero
+		end
+	end)
 end
 
 local function requireClientModule(moduleName: string, directPath: Instance?): any

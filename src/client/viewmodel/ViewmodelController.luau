@@ -370,6 +370,12 @@ local function updateRenderStep(dt: number)
 		if localPlayer.CameraMode ~= Enum.CameraMode.LockFirstPerson then
 			localPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
 		end
+		if localPlayer.CameraMinZoomDistance ~= 0.5 then
+			localPlayer.CameraMinZoomDistance = 0.5
+		end
+		if localPlayer.CameraMaxZoomDistance ~= 0.5 then
+			localPlayer.CameraMaxZoomDistance = 0.5
+		end
 		local char = localPlayer.Character
 		if char then
 			for _, desc in char:GetDescendants() do
