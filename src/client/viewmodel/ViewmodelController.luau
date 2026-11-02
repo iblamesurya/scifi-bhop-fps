@@ -192,19 +192,27 @@ local function tryLoadModelFromRegistry(weaponId: string): Model?
 		return nil
 	end
 
-	if type(AssetRegistry.GetViewmodel) == "function" then
-		local ok, model = pcall(AssetRegistry.GetViewmodel, weaponId)
-		if ok and typeof(model) == "Instance" and model:IsA("Model") then
-			return model:Clone()
-		end
+	local keysToTry = { weaponId }
+	local wConfig = getWeaponConfig(weaponId)
+	if type(wConfig) == "table" and type(wConfig.ViewmodelKey) == "string" and wConfig.ViewmodelKey ~= weaponId then
+		table.insert(keysToTry, wConfig.ViewmodelKey)
 	end
 
-	local viewmodelsTable = AssetRegistry.Viewmodels
-		or (if type(AssetRegistry.Models) == "table" then AssetRegistry.Models.Viewmodels else nil)
-	if type(viewmodelsTable) == "table" then
-		local entry = viewmodelsTable[weaponId]
-		if typeof(entry) == "Instance" and entry:IsA("Model") then
-			return entry:Clone()
+	for _, key in ipairs(keysToTry) do
+		if type(AssetRegistry.GetViewmodel) == "function" then
+			local ok, model = pcall(AssetRegistry.GetViewmodel, key)
+			if ok and typeof(model) == "Instance" and model:IsA("Model") then
+				return model:Clone()
+			end
+		end
+
+		local viewmodelsTable = AssetRegistry.Viewmodels
+			or (if type(AssetRegistry.Models) == "table" then AssetRegistry.Models.Viewmodels else nil)
+		if type(viewmodelsTable) == "table" then
+			local entry = viewmodelsTable[key]
+			if typeof(entry) == "Instance" and entry:IsA("Model") then
+				return entry:Clone()
+			end
 		end
 	end
 
